@@ -32,8 +32,9 @@ CSS = """
 .today b { font-size:1.05rem; }
 .today .muted { color:var(--dim); }
 
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); gap:.6rem; margin:.75rem 0 1.5rem; }
-.tile { border:1px solid var(--line); border-radius:10px; padding:.75rem .9rem; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(20rem,1fr)); gap:.7rem; margin:.75rem 0 1.5rem; }
+.tile { border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
+.tile .head { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
 .tile .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
 .tile .v { font-size:1.6rem; font-weight:650; line-height:1.25; font-variant-numeric:tabular-nums; }
 .tile .g { font-size:.82rem; color:var(--dim); }
@@ -88,7 +89,22 @@ CSS = """
 .tile.e-warning  { border-left:3px solid var(--warn); }
 .tile.e-serious  { border-left:3px solid var(--serious); }
 .tile.e-critical { border-left:3px solid var(--critical); }
-.tile .r { font-size:.82rem; margin-top:.25rem; }
+.tile .r { font-size:.86rem; margin-top:.5rem; }
+.tile .acao { font-size:.86rem; margin-top:.3rem; }
+.tile .acao::before { content:"→ "; color:var(--dim); }
+
+.meter { margin:.7rem 0 .1rem; }
+.track { position:relative; display:flex; height:.45rem; border-radius:99px; overflow:hidden; }
+.track i { display:block; height:100%; }
+.z-good{background:color-mix(in srgb,var(--good) 45%,transparent)}
+.z-warning{background:color-mix(in srgb,var(--warn) 45%,transparent)}
+.z-serious{background:color-mix(in srgb,var(--serious) 45%,transparent)}
+.z-critical{background:color-mix(in srgb,var(--critical) 45%,transparent)}
+.marker { position:absolute; top:-.2rem; width:3px; height:.85rem; border-radius:2px;
+  background:var(--fg); box-shadow:0 0 0 2px var(--bg); transform:translateX(-1.5px); }
+.scale { display:flex; justify-content:space-between; gap:.5rem; font-size:.72rem;
+  color:var(--dim); margin-top:.3rem; }
+.scale .alvo { text-align:right; }
 .tile .r .dot { font-weight:700; }
 .e-good .dot{color:var(--good)} .e-warning .dot{color:var(--warn)}
 .e-serious .dot{color:var(--serious)} .e-critical .dot{color:var(--critical)}
@@ -121,15 +137,37 @@ def _tsb_state(tsb: float) -> tuple[str, str, str]:
     return "b-good", "equilibrado", "●"
 
 
+def _meter(ficha: dict) -> str:
+    """Onde o valor cai entre o mau e o bom.
+
+    Sem isto, "a corrigir" é um rótulo sem fasquia: diz que está mal, mas não
+    diz quão longe do bom, nem para onde é preciso andar.
+    """
+    e = ficha.get("escala")
+    if not e:
+        return ""
+    zonas = "".join(f'<i class="z-{ESTADOS[z["estado"]][0]}" style="width:{z["largura"]}%"></i>'
+                    for z in e["zonas"])
+    limite = lambda x: f"{x:g}"
+    return (f'<div class=meter><div class=track>{zonas}'
+            f'<b class=marker style="left:{e["pos"]}%"></b></div>'
+            f'<div class=scale><span>{limite(e["min"])}</span>'
+            f'<span class=alvo>{escape(ficha["alvo"])}</span>'
+            f'<span>{limite(e["max"])}</span></div></div>')
+
+
 def _tile(ficha: dict) -> str:
-    """Um número, o seu veredicto, e a razão. A cor nunca vai sozinha."""
+    """Um número, onde ele cai, o que significa, e o que fazer."""
     css, icone, rotulo = ESTADOS[ficha["estado"]]
     unidade = f' <span class=u>{escape(ficha["unidade"])}</span>' if ficha["unidade"] else ""
     gloss = f'<div class=g>{escape(ficha["gloss"])}</div>' if ficha["gloss"] else ""
-    return (f'<div class="tile e-{css}"><div class=k>{escape(ficha["titulo"])}</div>'
+    acao = f'<div class=acao>{escape(ficha["acao"])}</div>' if ficha.get("acao") else ""
+    return (f'<div class="tile e-{css}">'
+            f'<div class=head><span class=k>{escape(ficha["titulo"])}</span>'
+            f'<span class=r style="margin:0"><span class=dot>{icone}</span> <b>{rotulo}</b></span></div>'
             f'<div class=v>{ficha["valor"]}{unidade}</div>{gloss}'
-            f'<div class=r><span class=dot>{icone}</span> <b>{rotulo}</b> — '
-            f'{escape(ficha["leitura"])}</div></div>')
+            f'{_meter(ficha)}'
+            f'<div class=r>{escape(ficha["leitura"])}</div>{acao}</div>')
 
 
 LEGENDA = ('<div class=key>'

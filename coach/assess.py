@@ -24,9 +24,41 @@ ESTADOS = {
 }
 
 
-def _v(key, titulo, valor, unidade, estado, leitura, gloss=""):
+def _v(key, titulo, valor, unidade, estado, leitura, gloss="",
+       escala=None, alvo="", acao=""):
+    """Uma ficha de leitura.
+
+    escala diz onde o valor cai entre o mau e o bom, para que "a corrigir" não
+    seja um rótulo sem fasquia. alvo é o intervalo desejável em palavras, e
+    acao o que fazer quando não está bem.
+    """
     return {"key": key, "titulo": titulo, "valor": valor, "unidade": unidade,
-            "estado": estado, "leitura": leitura, "gloss": gloss}
+            "estado": estado, "leitura": leitura, "gloss": gloss,
+            "escala": escala, "alvo": alvo, "acao": acao}
+
+
+def escala(minimo: float, maximo: float, zonas: list, valor) -> dict | None:
+    """Zonas contíguas e a posição do valor, ambas em percentagem da barra.
+
+    zonas: [(limite_superior, estado), ...] da esquerda para a direita; o
+    último limite é ignorado e assume-se o máximo.
+    """
+    if valor is None or maximo <= minimo:
+        return None
+    largura = maximo - minimo
+    saida, anterior = [], minimo
+    for limite, estado in zonas:
+        topo = min(float(limite), maximo)
+        if topo > anterior:
+            saida.append({"largura": round((topo - anterior) / largura * 100, 2),
+                          "estado": estado})
+            anterior = topo
+    if anterior < maximo:
+        saida.append({"largura": round((maximo - anterior) / largura * 100, 2),
+                      "estado": zonas[-1][1]})
+    pos = (min(max(float(valor), minimo), maximo) - minimo) / largura * 100
+    return {"zonas": saida, "pos": round(pos, 2),
+            "min": minimo, "max": maximo, "fora": float(valor) < minimo or float(valor) > maximo}
 
 
 def tsb(value: float) -> dict:
@@ -40,7 +72,12 @@ def tsb(value: float) -> dict:
         e, l = "bom", "fresco, bom momento para uma sessão exigente"
     else:
         e, l = "cuidado", "demasiado fresco: já se perde forma por falta de treino"
-    return _v("tsb", "Frescura", value, "", e, l, "TSB — forma menos fadiga")
+    return _v("tsb", "Frescura", value, "", e, l, "TSB — forma menos fadiga",
+              escala(-40, 30, [(-25, "alerta"), (-10, "atencao"), (5, "bom"),
+                               (25, "bom"), (30, "cuidado")], value),
+              "confortável entre −10 e +5; acima de +25 já é falta de treino",
+              "" if e == "bom" else ("Precisas de dias fáceis antes da próxima sessão dura."
+                                     if value < -10 else "Aproveita para treinar a sério."))
 
 
 def ctl(value: float, delta: float) -> dict:
@@ -52,7 +89,11 @@ def ctl(value: float, delta: float) -> dict:
         e, l = "atencao", f"a descer {delta:.1f} em quatro semanas"
     else:
         e, l = "cuidado", f"a descer {delta:.1f} em quatro semanas, a perder base aeróbia"
-    return _v("ctl", "Forma de fundo", value, "", e, l, "CTL — média de carga a 42 dias")
+    return _v("ctl", "Forma de fundo", value, "", e, l,
+              f"CTL — média de carga a 42 dias · há 4 semanas estava em {round(value - delta, 1)}",
+              escala(-8, 8, [(-4, "cuidado"), (-1, "atencao"), (2, "bom"), (8, "bom")], delta),
+              "o que interessa é a direção: subir devagar, sem saltos",
+              "" if e == "bom" else "Acrescenta uma sessão fácil por semana antes de acrescentar intensidade.")
 
 
 def rhr(now, base) -> dict:
@@ -67,7 +108,11 @@ def rhr(now, base) -> dict:
         e, l = "bom", "na base habitual"
     else:
         e, l = "bom", f"{d:.1f} bpm abaixo da base, sinal de boa recuperação"
-    return _v("rhr", "FC de repouso", now, "bpm", e, l, f"7 dias · base 28 dias {base}")
+    return _v("rhr", "FC de repouso", now, "bpm", e, l,
+              f"média a 7 dias · base de 28 dias {base} · diferença {d:+.1f} bpm",
+              escala(-4, 8, [(-1, "bom"), (2, "bom"), (5, "cuidado"), (8, "alerta")], d),
+              "normal até 2 bpm acima da base",
+              "" if e == "bom" else "Trata como sinal de fadiga ou infeção: descansa e reavalia amanhã.")
 
 
 def hrv(now, base) -> dict:
@@ -82,7 +127,11 @@ def hrv(now, base) -> dict:
         e, l = "bom", "na base habitual"
     else:
         e, l = "bom", f"{pct:+.0f}% acima da base, boa recuperação"
-    return _v("hrv", "HRV", now, "", e, l, f"7 dias · base 28 dias {base}")
+    return _v("hrv", "HRV", now, "", e, l,
+              f"média a 7 dias · base de 28 dias {base} · diferença {pct:+.0f}%",
+              escala(-25, 15, [(-12, "alerta"), (-5, "cuidado"), (5, "bom"), (15, "bom")], pct),
+              "normal entre −5% e +5% da base",
+              "" if e == "bom" else "Dorme mais e adia a próxima sessão dura em um ou dois dias.")
 
 
 def sleep(hours) -> dict:
@@ -96,7 +145,10 @@ def sleep(hours) -> dict:
         e, l = "atencao", "aceitável, mas há margem para melhorar"
     else:
         e, l = "bom", "suficiente para sustentar a carga"
-    return _v("sono", "Sono", hours, "h", e, l, "média das últimas 7 noites")
+    return _v("sono", "Sono", hours, "h", e, l, "média das últimas 7 noites",
+              escala(4, 9, [(6, "alerta"), (6.5, "cuidado"), (7, "atencao"), (9, "bom")], hours),
+              "7 h ou mais sustenta a carga; abaixo de 6 h o treino deixa de render",
+              "" if e == "bom" else "Deitar meia hora mais cedo rende mais do que qualquer sessão extra.")
 
 
 def ramp(value) -> dict:
@@ -112,7 +164,13 @@ def ramp(value) -> dict:
         e, l = "atencao", "abaixo de 0.8: semana mais leve do que as anteriores"
     else:
         e, l = "cuidado", "muito abaixo das semanas anteriores, a forma vai cair"
-    return _v("ramp", "Progressão", value, "", e, l, "última semana face à média das anteriores")
+    return _v("ramp", "Progressão", value, "", e, l,
+              "carga da última semana a dividir pela média das anteriores",
+              escala(0, 2, [(0.5, "cuidado"), (0.8, "atencao"), (1.3, "bom"),
+                            (1.5, "cuidado"), (2, "alerta")], value),
+              "sustentável entre 0.8 e 1.3",
+              "" if e == "bom" else ("Sobe o volume devagar, cerca de 10% por semana."
+                                     if value < 0.8 else "Segura a próxima semana no mesmo volume."))
 
 
 def days_since_hard(days) -> dict:
@@ -127,7 +185,12 @@ def days_since_hard(days) -> dict:
         e, l = "atencao", "sessão dura muito recente, cuidado com a seguinte"
     else:
         e, l = "bom", "espaçamento adequado"
-    return _v("dsh", "Sessão dura há", days, "dias", e, l, "")
+    return _v("dsh", "Sessão dura há", days, "dias", e, l,
+              "uma sessão dura é carga de 100 ou mais",
+              escala(0, 25, [(2, "atencao"), (14, "bom"), (21, "atencao"), (25, "cuidado")], days),
+              "entre 2 e 14 dias mantém o estímulo sem acumular fadiga",
+              "" if e == "bom" else ("Mete intervalos ou um contínuo forte esta semana."
+                                     if days > 14 else "Deixa passar mais um dia fácil."))
 
 
 def volume(minutes_7d, mean_week_minutes) -> dict:
@@ -140,7 +203,12 @@ def volume(minutes_7d, mean_week_minutes) -> dict:
         e, l = "cuidado", f"bem acima da média do mês ({mean_week_minutes} min)"
     else:
         e, l = "bom", f"em linha com a média do mês ({mean_week_minutes} min)"
-    return _v("vol", "Volume 7 dias", minutes_7d, "min", e, l, "")
+    return _v("vol", "Volume 7 dias", minutes_7d, "min", e, l,
+              f"média das semanas com treino: {mean_week_minutes} min",
+              escala(0, 2, [(0.6, "atencao"), (1.4, "bom"), (2, "cuidado")], razao),
+              "entre 60% e 140% da média do mês",
+              "" if e == "bom" else ("Falta volume face ao teu normal."
+                                     if razao < 1 else "Semana pesada: a seguinte deve ser mais leve."))
 
 
 ORDEM = {"alerta": 0, "cuidado": 1, "atencao": 2, "bom": 3}
