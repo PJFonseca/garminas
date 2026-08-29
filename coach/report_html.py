@@ -15,6 +15,7 @@ from __future__ import annotations
 from html import escape
 
 from assess import ESTADOS, desporto
+from idioma import t as _t
 from figuras import CSS as FIG_CSS, exercicios, linha_tempo
 
 CSS = """
@@ -42,7 +43,7 @@ CSS = """
   background:color-mix(in srgb, var(--s1) 12%, transparent); font-size:1rem; font-weight:600; }
 .seguir .porque { margin:.55rem 0 0; font-size:.87rem; color:var(--dim); max-width:68ch; }
 .day .ritmo { font-size:.8rem; margin-top:.35rem; font-weight:600; }
-.seguir .porque::before { content:"Porquê esta: "; }
+
 .day .desc { font-size:.76rem; color:var(--dim); margin-top:.3rem; line-height:1.4; }
 .today b { font-size:1.05rem; }
 .today .muted { color:var(--dim); }
@@ -171,14 +172,15 @@ dialog::backdrop { background:rgba(0,0,0,.55); }
   color:var(--dim); font-size:1.6rem; cursor:pointer; line-height:1; }
 """ + FIG_CSS
 
-INTENSITY = [(85, "duro", "dura"), (50, "med", "moderada"), (1, "leve", "leve"), (0, "rest", "descanso")]
+INTENSITY = [(85, "duro", "int.dura"), (50, "med", "int.moderada"),
+             (1, "leve", "int.leve"), (0, "rest", "int.descanso")]
 
 
-def _intensity(load: float) -> tuple[str, str]:
-    for limit, css, label in INTENSITY:
+def _intensity(load: float, ln: str) -> tuple[str, str]:
+    for limit, css, chave in INTENSITY:
         if load >= limit:
-            return css, label
-    return "rest", "descanso"
+            return css, _t(chave, ln)
+    return "rest", _t("int.descanso", ln)
 
 
 def _tsb_state(tsb: float) -> tuple[str, str, str]:
@@ -192,7 +194,7 @@ def _tsb_state(tsb: float) -> tuple[str, str, str]:
     return "b-good", "equilibrado", "●"
 
 
-def _meter(ficha: dict, compacto: bool = False) -> str:
+def _meter(ficha: dict, compacto: bool = False, ln: str = "en") -> str:
     """Onde o valor cai entre o mau e o bom.
 
     Sem isto, "a corrigir" é um rótulo sem fasquia: diz que está mal, mas não
@@ -214,14 +216,14 @@ def _meter(ficha: dict, compacto: bool = False) -> str:
             f'<div class=alvo>{escape(ficha["alvo"])}</div></div>')
 
 
-def _linha(ficha: dict) -> str:
+def _linha(ficha: dict, ln: str) -> str:
     """Versão de uma linha, para o que está dentro do normal.
 
     Oito mosaicos do mesmo tamanho obrigam a ler os oito para descobrir os
     três que interessam. O que está bem confirma-se de relance; só o que está
     fora do sítio merece espaço.
     """
-    css, icone, _ = ESTADOS[ficha["estado"]]
+    css, icone, _chave = ESTADOS[ficha["estado"]]
     unidade = f' <span class=u>{escape(ficha["unidade"])}</span>' if ficha["unidade"] else ""
     return (f'<div class="linha e-{css}"><span class=nome>{escape(ficha["titulo"])}</span>'
             f'<span class=val>{ficha["valor"]}{unidade}</span>'
@@ -229,9 +231,10 @@ def _linha(ficha: dict) -> str:
             f'{_meter(ficha, compacto=True)}</div>')
 
 
-def _tile(ficha: dict) -> str:
+def _tile(ficha: dict, ln: str) -> str:
     """Um número, onde ele cai, o que significa, e o que fazer."""
-    css, icone, rotulo = ESTADOS[ficha["estado"]]
+    css, icone, _chave = ESTADOS[ficha["estado"]]
+    rotulo = ficha.get("rotulo") or _t(_chave, ln)
     unidade = f' <span class=u>{escape(ficha["unidade"])}</span>' if ficha["unidade"] else ""
     gloss = f'<div class=g>{escape(ficha["gloss"])}</div>' if ficha["gloss"] else ""
     acao = f'<div class=acao>{escape(ficha["acao"])}</div>' if ficha.get("acao") else ""
@@ -239,19 +242,19 @@ def _tile(ficha: dict) -> str:
             f'<div class=head><span class=k>{escape(ficha["titulo"])}</span>'
             f'<span class=r style="margin:0"><span class=dot>{icone}</span> <b>{rotulo}</b></span></div>'
             f'<div class=v>{ficha["valor"]}{unidade}</div>{gloss}'
-            f'{_meter(ficha)}'
+            f'{_meter(ficha, ln=ln)}'
             f'<div class=r>{escape(ficha["leitura"])}</div>{acao}</div>')
 
 
-LEGENDA = ('<div class=key>'
-           '<span class=e-good><b class=dot>●</b> bom</span>'
-           '<span class=e-warning><b class=dot>◐</b> a vigiar</span>'
-           '<span class=e-serious><b class=dot>◑</b> a corrigir</span>'
-           '<span class=e-critical><b class=dot>▲</b> alerta</span>'
-           '<span>ordenado do mais urgente para o mais tranquilo</span></div>')
+def _legenda(ln: str) -> str:
+    pares = [("good", "●", "estado.bom"), ("warning", "◐", "estado.atencao"),
+             ("serious", "◑", "estado.cuidado"), ("critical", "▲", "estado.alerta")]
+    itens = "".join(f'<span class=e-{c}><b class=dot>{i}</b> {_t(k, ln)}</span>'
+                    for c, i, k in pares)
+    return f'<div class=key>{itens}<span>{_t("ui.ordenado", ln)}</span></div>'
 
 
-def _chart(weeks: list[dict]) -> str:
+def _chart(weeks: list[dict], ln: str) -> str:
     """Carga por semana. Uma série, comprimento a codificar a magnitude."""
     ordered = list(reversed(weeks))
     top = max((w["load"] for w in ordered), default=0) or 1
@@ -261,23 +264,23 @@ def _chart(weeks: list[dict]) -> str:
         barra = (f'<div class=bar style="height:{altura}%"></div>' if w["load"]
                  else '<div class=zero></div>')
         cols.append(
-            f'<div class=col><span class=tip>{w["start"]} a {w["end"]} · '
-            f'{w["sessions"]} sessões · {w["minutes"]} min · {w["km"]} km</span>'
+            f'<div class=col><span class=tip>{w["start"]} / {w["end"]} · '
+            f'{w["sessions"]}× · {w["minutes"]} min · {w["km"]} km</span>'
             f'<span class=n>{w["load"]}</span>{barra}</div>')
         axis.append(f'<span>{w["start"][5:]}</span>')
     # Linha da média: sem ela, "319" e "134" são só dois números altos.
     media = round(sum(w["load"] for w in ordered) / len(ordered)) if ordered else 0
     marca = (f'<div class=media style="bottom:{round(media / top * 100)}%">'
-             f'<span>média {media}</span></div>') if media else ""
+             f'<span>{_t("ui.media", ln, n=media)}</span></div>') if media else ""
     return (f'<div class=plot><div class=chart>{"".join(cols)}</div>{marca}</div>'
             f'<div class=axis>{"".join(axis)}</div>')
 
 
-def _plan(days: list[dict], hoje: str) -> str:
+def _plan(days: list[dict], hoje: str, ln: str) -> str:
     cards = []
     for d in days:
-        css, label = _intensity(d["load_est"])
-        minutos = f'{d["duration_min"]} min' if d["duration_min"] else "sem treino"
+        css, label = _intensity(d["load_est"], ln)
+        minutos = f'{d["duration_min"]} min' if d["duration_min"] else _t("ui.sem_treino", ln)
         cards.append(
             f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}" '
             f'data-dia="{d["date"]}" role=button tabindex=0>'
@@ -287,11 +290,11 @@ def _plan(days: list[dict], hoje: str) -> str:
             f'<div class=m>{minutos}</div>'
             + (f'<div class=ritmo>{escape(d["ritmo"])}</div>' if d.get("ritmo") else "")
             + f'<div class=desc>{escape(d.get("description", ""))}</div>'
-            + '<div class=ver>ver a sessão</div></div>')
+            + f'<div class=ver>{_t("ui.ver_sessao", ln)}</div></div>')
     return f'<div class=plan>{"".join(cards)}</div>{"".join(_modal(x) for x in days)}'
 
 
-def _modal(d: dict) -> str:
+def _modal(d: dict, ln: str) -> str:
     """A sessão inteira, ao clicar no dia.
 
     O cartão tem de caber numa grelha. O modal não tem essa desculpa, e é onde
@@ -309,29 +312,28 @@ def _modal(d: dict) -> str:
     if d.get("exercicios"):
         partes.append(exercicios(d["exercicios"]))
     if d.get("motivo"):
-        partes.append(f'<p class=porque>Porquê esta: {escape(d["motivo"])}</p>')
+        partes.append(f'<p class=porque>{_t("ui.porque_esta", ln)}: {escape(d["motivo"])}</p>')
     return (f'<dialog id="dia-{d["date"]}"><div class=modal>'
             f'<button class=fechar aria-label=Fechar>&times;</button>'
             f'{"".join(partes)}</div></dialog>')
 
 
-def _prose(text: str | None) -> str:
+def _prose(text: str | None, ln: str) -> str:
     if not text:
-        return ('<p class=legend>Sem texto redigido: ou o modelo não respondeu, ou o que '
-                'escreveu continha números fora dos dados e foi rejeitado. Os números e o '
-                'plano mantêm-se válidos.</p>')
+        return f'<p class=legend>{_t("ui.sem_texto", ln)}</p>'
     blocos = [f"<p>{escape(b.strip())}</p>" for b in text.split("\n") if b.strip()]
     return f'<div class=prose>{"".join(blocos)}</div>'
 
 
-def _seguir(dia: dict, hoje: str) -> str:
+def _seguir(dia: dict, hoje: str, ln: str) -> str:
     """A sessão seguinte, escrita por extenso.
 
     O plano dizia "Corrida fácil, 35 min", que não chega para saber o que
     fazer: a que ritmo, com que intervalos, quanto tempo a aquecer. A
     descrição estava no catálogo desde o início e nunca chegava ao ecrã.
     """
-    quando = "Hoje" if dia["date"] == hoje else f'Amanhã, {dia["weekday"]}'
+    quando = (_t("ui.hoje", ln) if dia["date"] == hoje
+              else f'{_t("ui.amanha", ln)}, {dia["weekday"]}')
     dur = f' <span class=dur>{dia["duration_min"]} min</span>' if dia["duration_min"] else ""
     como = f'<p class=como>{escape(dia.get("description", ""))}</p>' if dia.get("description") else ""
     ritmo = f'<p class=ritmo>{escape(dia["ritmo"])}</p>' if dia.get("ritmo") else ""
@@ -344,6 +346,7 @@ def report_html(d: dict) -> str:
     m, plan = d["metrics"], d["plan"]
     load, rec, month = m["load"], m["recovery"], m["month"]
     hoje = d["generated"]
+    ln = d.get("idioma") or "en"
     fichas = d.get("assessment") or []
     cls, estado, icone = _tsb_state(load["tsb"])
 
@@ -355,29 +358,27 @@ def report_html(d: dict) -> str:
 
     if problemas:
         estado_html = (
-            f'<h2>A corrigir <span class=conta>{len(problemas)} de {len(fichas)}</span></h2>'
-            f'{LEGENDA}<div class=tiles>{"".join(_tile(f) for f in problemas)}</div>')
+            f'<h2>{_t("ui.a_corrigir", ln)} <span class=conta>'
+            f'{_t("ui.de", ln, n=len(problemas), total=len(fichas))}</span></h2>'
+            f'{_legenda(ln)}<div class=tiles>{"".join(_tile(f, ln) for f in problemas)}</div>')
     else:
-        estado_html = ('<h2>Está tudo dentro do esperado</h2>'
-                       '<p class=legend>Nenhuma métrica fora dos limites. Segue o plano.</p>')
+        estado_html = (f'<h2>{_t("ui.tudo_bem", ln)}</h2>'
+                       f'<p class=legend>{_t("ui.tudo_bem_sub", ln)}</p>')
     if calmas:
         estado_html += (
-            f'<h2>Dentro do normal <span class=conta>{len(calmas)}</span></h2>'
-            f'<div class=calmas>{"".join(_linha(f) for f in calmas)}</div>')
+            f'<h2>{_t("ui.normal", ln)} <span class=conta>{len(calmas)}</span></h2>'
+            f'<div class=calmas>{"".join(_linha(f, ln) for f in calmas)}</div>')
 
     objetivo_html = ""
     if (d.get("objetivo") or {}).get("perder_peso"):
-        objetivo_html = (
-            '<p class=legend>Com o objetivo de perder peso, os dias de descanso a mais passam a '
-            'caminhada: gasta energia e quase não cobra recuperação. A intensidade fica na mesma, '
-            'porque é essa que magoa. O treino ajuda, mas a diferença maior vem da alimentação, '
-            'que este relatório não vê. E se aparecerem sinais de fadiga, eles mandam primeiro.</p>')
+        objetivo_html = f'<p class=legend>{_t("ui.objetivo_peso", ln)}</p>'
 
     if d.get("today_done"):
         s = d["today_done"]
         km = f', {s["km"]} km' if s["km"] else ""
-        agora = (f'<b>Já treinaste hoje:</b> {escape(desporto(s["sport"]))}, {s["minutes"]} min{km}, '
-                 f'carga {s["load"]}. <span class=muted>O plano começa amanhã.</span>')
+        agora = (f'<b>{_t("ui.ja_treinaste", ln)}</b> {escape(desporto(s["sport"], ln))}, '
+                 f'{s["minutes"]} min{km}, {_t("ui.carga", ln)} {s["load"]}. '
+                 f'<span class=muted>{_t("ui.plano_amanha", ln)}</span>')
     else:
         p0 = plan["days"][0]
         dur = f' — {p0["duration_min"]} min' if p0["duration_min"] else ""
@@ -386,66 +387,68 @@ def report_html(d: dict) -> str:
     flags = ""
     if d["flags"]:
         itens = "".join(f"<li>{escape(f)}</li>" for f in d["flags"])
-        flags = (f'<div class=callout><h3>⚠ Bandeiras de recuperação</h3><ul>{itens}</ul>'
-                 f'<p class=legend>Enquanto durarem, o plano só sugere sessões leves.</p></div>')
+        flags = (f'<div class=callout><h3>⚠ {_t("ui.bandeiras", ln)}</h3><ul>{itens}</ul>'
+                 f'<p class=legend>{_t("ui.bandeiras_sub", ln)}</p></div>')
 
     sessoes = "".join(
-        f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"]))}</td>'
+        f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"], ln))}</td>'
         f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or ""}</td>'
         f'<td class=num>{s["avg_hr"] or ""}</td><td class=num>{s["load"]}</td></tr>'
         for s in m["recent"])
 
     resumo = plan["summary"]
+    n_duras = month["hard_sessions"]
+    duras_txt = (_t("ui.sessao_dura", ln) if n_duras == 1
+                 else _t("ui.sessoes_duras", ln, n=n_duras))
     return f"""<div class=viz>
-<div class=hero><h1>Treino</h1><span class=date>{hoje}</span>
+<div class=hero><h1>{_t("ui.treino", ln)}</h1><span class=date>{hoje}</span>
   <span class="badge {cls}">{icone} {estado}</span></div>
 
 <div class=today>{agora}</div>
-{_seguir(plan["days"][0], hoje)}
+{_seguir(plan["days"][0], hoje, ln)}
 {flags}
 
 {estado_html}
 
 <div class=painéis>
   <div class=painel>
-    <h2>Análise</h2>
-    {_prose(d.get("analysis"))}
+    <h2>{_t("ui.analise", ln)}</h2>
+    {_prose(d.get("analysis"), ln)}
   </div>
   <div class=painel>
-    <h2>Carga por semana</h2>
-    {_chart(month["weeks"])}
-    <p class=legend>Progressão: <b>{escape(d["ramp_verdict"])}</b>. {month["hard_sessions"]}
-      {"sessão dura" if month["hard_sessions"] == 1 else "sessões duras"} e
-      {month["rest_days"]} dias sem treino em 28. Sessão mais longa {month["longest_min"]} min.</p>
+    <h2>{_t("ui.carga_semana", ln)}</h2>
+    {_chart(month["weeks"], ln)}
+    <p class=legend>{_t("ui.progressao", ln)}: <b>{escape(d["ramp_verdict"])}</b>.
+      {_t("ui.resumo_28d", ln, duras=duras_txt, descanso=month["rest_days"],
+          longa=month["longest_min"])}</p>
   </div>
 </div>
 
-<h2>Plano para os próximos {len(plan["days"])} dias</h2>
-{_plan(plan["days"], hoje)}
-<p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
-  CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
-  Calculado a partir das regras, não escrito pelo modelo.</p>
+<h2>{_t("ui.plano", ln, n=len(plan["days"]))}</h2>
+{_plan(plan["days"], hoje, ln)}
+<p class=legend>{_t("ui.resumo_plano", ln, s=resumo["sessions"], h=resumo["hard"],
+                    min=resumo["minutes"], a=resumo["ctl_start"], b=resumo["ctl_end"],
+                    tsb=resumo["tsb_end"])}</p>
 {objetivo_html}
 
 <div class=painéis>
   <div class=painel>
-    <h2>Recomendação</h2>
-    {_prose(d.get("review"))}
-    <h3>Quando abrandar</h3>
+    <h2>{_t("ui.recomendacao", ln)}</h2>
+    {_prose(d.get("review"), ln)}
+    <h3>{_t("ui.quando_abrandar", ln)}</h3>
     <p class=legend>{escape(d["slow_down"])}</p>
   </div>
   <div class=painel>
-    <h2>Treinos recentes</h2>
+    <h2>{_t("ui.recentes", ln)}</h2>
     <div class=wrap><table>
-      <tr><th>Data</th><th>Desporto</th><th class=num>Min</th><th class=num>km</th>
-          <th class=num>FC média</th><th class=num>Carga</th></tr>
+      <tr><th>{_t("th.data", ln)}</th><th>{_t("th.desporto", ln)}</th>
+          <th class=num>{_t("th.min", ln)}</th><th class=num>{_t("th.km", ln)}</th>
+          <th class=num>{_t("th.fc", ln)}</th><th class=num>{_t("th.carga", ln)}</th></tr>
       {sessoes}
     </table></div>
   </div>
 </div>
 
 <hr>
-<p class=legend>Orientação genérica gerada a partir dos teus próprios dados. Não substitui
-acompanhamento clínico ou de um treinador, sobretudo se houver dor, tonturas ou sintomas
-persistentes.</p>
+<p class=legend>{_t("ui.aviso", ln)}</p>
 </div>"""

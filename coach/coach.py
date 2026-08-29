@@ -325,6 +325,35 @@ dormir, usa o número que está em "onde devia estar", nunca o que ela dorme
 agora.""")
 
 
+def comentar_sessao(m: dict) -> str | None:
+    """Duas frases sobre o treino que acabou de ser feito.
+
+    As comparações vêm feitas do metrics.py. Ao modelo cabe juntá-las numa
+    coisa que se leia, não descobri-las.
+    """
+    s = m.get("sessao") or {}
+    if not s.get("has_data") or not s.get("notas"):
+        return None
+
+    factos = "\n".join(f"- {n}" for n in s["notas"])
+    return write(f"""Acabaste de registar esta sessão:
+{desporto(s['sport'])}, {s['minutes']} minutos, {s['km']} km\
+{f", {s['kmh']} km/h" if s.get('kmh') else ''}\
+{f", FC média {s['avg_hr']}" if s.get('avg_hr') else ''}, carga {s['load']}.
+
+Comparações já feitas, que não deves refazer:
+{factos}
+
+Veredicto já decidido: {s['veredicto']}
+
+Escreve duas frases, em português europeu, a falar com a pessoa. A primeira diz
+como correu, com uma comparação concreta da lista. A segunda diz o que isso
+significa para os próximos dias.
+
+Máximo 45 palavras. Não inventes números nem comparações fora da lista.""",
+                 max_tokens=220)
+
+
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
     """Segunda chamada: 30 dias e justificação do plano já calculado."""
     month = m["month"]
@@ -493,6 +522,7 @@ def main() -> None:
                       skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"),
                       extras=cfg)
 
+    sessao = comentar_sessao(m)
     analysis = analyse_training(m, flags)
     review = review_and_recommend(m, plan, flags)
 
@@ -517,6 +547,7 @@ def main() -> None:
         "slow_down": slow_down_rule(cfg["recovery_flags"]),
         "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
         "assessment": assess(m),
+        "sessao_comentario": sessao,
         "objetivo": cfg.get("objetivo") or {},
     }
     for name in (f"{stamp}.json", "latest.json"):

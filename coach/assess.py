@@ -7,25 +7,31 @@ relatório. Por isso cada métrica traz um estado e uma frase que diz porquê.
 
 Os limiares são convenções de treino, não verdades: TSB pelas bandas
 clássicas de Coggan, a razão aguda/crónica pela literatura de carga de treino
-(a zona 0.8–1.3 é a habitualmente citada como sustentável), e FC de repouso,
+(a zona 0.8 a 1.3 é a habitualmente citada como sustentável), e FC de repouso,
 HRV e sono pelos mesmos valores que já disparam as bandeiras de recuperação,
 para que o relatório não se contradiga.
 
-Estados, por ordem de gravidade: bom, atencao, cuidado, alerta.
+O texto sai no idioma do perfil. Os limiares não mudam com a língua.
 """
 
 from __future__ import annotations
 
+from idioma import t
+
 ESTADOS = {
-    "bom":     ("good",     "●", "bom"),
-    "atencao": ("warning",  "◐", "a vigiar"),
-    "cuidado": ("serious",  "◑", "a corrigir"),
-    "alerta":  ("critical", "▲", "alerta"),
+    "bom":     ("good",     "●", "estado.bom"),
+    "atencao": ("warning",  "◐", "estado.atencao"),
+    "cuidado": ("serious",  "◑", "estado.cuidado"),
+    "alerta":  ("critical", "▲", "estado.alerta"),
 }
 
 
+def rotulo(estado: str, idioma: str) -> str:
+    return t(ESTADOS[estado][2], idioma)
+
+
 def _v(key, titulo, valor, unidade, estado, leitura, gloss="",
-       escala=None, alvo="", acao=""):
+       escala_=None, alvo="", acao=""):
     """Uma ficha de leitura.
 
     escala diz onde o valor cai entre o mau e o bom, para que "a corrigir" não
@@ -34,15 +40,12 @@ def _v(key, titulo, valor, unidade, estado, leitura, gloss="",
     """
     return {"key": key, "titulo": titulo, "valor": valor, "unidade": unidade,
             "estado": estado, "leitura": leitura, "gloss": gloss,
-            "escala": escala, "alvo": alvo, "acao": acao}
+            "escala": escala_, "alvo": alvo, "acao": acao,
+            "rotulo": None}
 
 
 def escala(minimo: float, maximo: float, zonas: list, valor) -> dict | None:
-    """Zonas contíguas e a posição do valor, ambas em percentagem da barra.
-
-    zonas: [(limite_superior, estado), ...] da esquerda para a direita; o
-    último limite é ignorado e assume-se o máximo.
-    """
+    """Zonas contíguas e a posição do valor, ambas em percentagem da barra."""
     if valor is None or maximo <= minimo:
         return None
     largura = maximo - minimo
@@ -57,161 +60,149 @@ def escala(minimo: float, maximo: float, zonas: list, valor) -> dict | None:
         saida.append({"largura": round((maximo - anterior) / largura * 100, 2),
                       "estado": zonas[-1][1]})
     pos = (min(max(float(valor), minimo), maximo) - minimo) / largura * 100
-    return {"zonas": saida, "pos": round(pos, 2),
-            "min": minimo, "max": maximo, "fora": float(valor) < minimo or float(valor) > maximo}
+    return {"zonas": saida, "pos": round(pos, 2), "min": minimo, "max": maximo}
 
 
-def tsb(value: float) -> dict:
+def tsb(value: float, ln: str) -> dict:
     if value < -25:
-        e, l = "alerta", "fadiga a acumular mais depressa do que a recuperação"
+        e, l = "alerta", t("l.tsb.alerta", ln)
     elif value < -10:
-        e, l = "atencao", "cansaço normal de quem está a construir carga"
+        e, l = "atencao", t("l.tsb.atencao", ln)
     elif value <= 5:
-        e, l = "bom", "carga e recuperação em equilíbrio"
+        e, l = "bom", t("l.tsb.equilibrio", ln)
     elif value <= 25:
-        e, l = "bom", "fresco, bom momento para uma sessão exigente"
+        e, l = "bom", t("l.tsb.fresco", ln)
     else:
-        e, l = "cuidado", "demasiado fresco, já se perde forma por falta de treino"
-    return _v("tsb", "Frescura", value, "", e, l, "TSB, a forma menos a fadiga",
+        e, l = "cuidado", t("l.tsb.parado", ln)
+    acao = "" if e == "bom" else t("ac.tsb.descansar" if value < -10 else "ac.tsb.treinar", ln)
+    return _v("tsb", t("m.tsb", ln), value, "", e, l, t("g.tsb", ln),
               escala(-40, 30, [(-25, "alerta"), (-10, "atencao"), (5, "bom"),
                                (25, "bom"), (30, "cuidado")], value),
-              "confortável entre −10 e +5. Acima de +25 já é falta de treino",
-              "" if e == "bom" else ("Precisas de dias fáceis antes da próxima sessão dura."
-                                     if value < -10 else "Aproveita para treinar a sério."))
+              t("a.tsb", ln), acao)
 
 
-def ctl(value: float, delta: float) -> dict:
+def ctl(value: float, delta: float, ln: str) -> dict:
     if delta > 2:
-        e, l = "bom", f"a subir {delta:+.1f} em quatro semanas, estás a ganhar base"
+        e, l = "bom", t("l.ctl.sobe", ln, delta=f"{delta:+.1f}")
     elif delta >= -1:
-        e, l = "bom", "estável em quatro semanas, a manter a base"
+        e, l = "bom", t("l.ctl.estavel", ln)
     elif delta >= -4:
-        e, l = "atencao", f"a descer {delta:.1f} em quatro semanas"
+        e, l = "atencao", t("l.ctl.desce", ln, delta=f"{delta:.1f}")
     else:
-        e, l = "cuidado", f"a descer {delta:.1f} em quatro semanas, a perder base aeróbia"
-    return _v("ctl", "Forma de fundo", value, "", e, l,
-              f"CTL, média da carga a 42 dias. Há quatro semanas estava em {round(value - delta, 1)}",
+        e, l = "cuidado", t("l.ctl.cai", ln, delta=f"{delta:.1f}")
+    return _v("ctl", t("m.ctl", ln), value, "", e, l,
+              t("g.ctl", ln, antes=round(value - delta, 1)),
               escala(-8, 8, [(-4, "cuidado"), (-1, "atencao"), (2, "bom"), (8, "bom")], delta),
-              "o que interessa é a direção, a subir devagar e sem saltos",
-              "" if e == "bom" else "Acrescenta uma sessão fácil por semana antes de acrescentar intensidade.")
+              t("a.ctl", ln), "" if e == "bom" else t("ac.ctl", ln))
 
 
-def rhr(now, base) -> dict:
+def rhr(now, base, ln: str) -> dict:
     if now is None or base is None:
-        return _v("rhr", "FC de repouso", "sem dados", "", "bom", "sem dados suficientes")
+        return _v("rhr", t("m.rhr", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
     d = now - base
     if d > 5:
-        e, l = "alerta", f"{d:+.1f} bpm acima da base: o corpo está a pedir descanso"
+        e, l = "alerta", t("l.rhr.alto", ln, d=f"{d:+.1f}")
     elif d > 2:
-        e, l = "cuidado", f"{d:+.1f} bpm acima da base, a vigiar nos próximos dias"
+        e, l = "cuidado", t("l.rhr.medio", ln, d=f"{d:+.1f}")
     elif d >= -1:
-        e, l = "bom", "na base habitual"
+        e, l = "bom", t("l.rhr.normal", ln)
     else:
-        e, l = "bom", f"{d:.1f} bpm abaixo da base, sinal de boa recuperação"
-    return _v("rhr", "FC de repouso", now, "bpm", e, l,
-              f"média a 7 dias. Base de 28 dias: {base}. Diferença: {d:+.1f} bpm",
+        e, l = "bom", t("l.rhr.baixo", ln, d=f"{d:.1f}")
+    return _v("rhr", t("m.rhr", ln), now, "bpm", e, l,
+              t("g.base", ln, base=base, delta=f"{d:+.1f} bpm"),
               escala(-4, 8, [(-1, "bom"), (2, "bom"), (5, "cuidado"), (8, "alerta")], d),
-              "normal até 2 bpm acima da base",
-              "" if e == "bom" else "Trata como sinal de fadiga ou infeção: descansa e reavalia amanhã.")
+              t("a.rhr", ln), "" if e == "bom" else t("ac.rhr", ln))
 
 
-def hrv(now, base) -> dict:
+def hrv(now, base, ln: str) -> dict:
     if now is None or base is None:
-        return _v("hrv", "HRV", "sem dados", "", "bom", "sem dados suficientes")
+        return _v("hrv", t("m.hrv", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
     pct = (now - base) / base * 100 if base else 0
     if pct < -12:
-        e, l = "alerta", f"{pct:.0f}% abaixo da base: sistema nervoso sob stress"
+        e, l = "alerta", t("l.hrv.alerta", ln, pct=f"{pct:.0f}")
     elif pct < -5:
-        e, l = "cuidado", f"{pct:.0f}% abaixo da base"
+        e, l = "cuidado", t("l.hrv.baixo", ln, pct=f"{pct:.0f}")
     elif pct <= 5:
-        e, l = "bom", "na base habitual"
+        e, l = "bom", t("l.hrv.normal", ln)
     else:
-        e, l = "bom", f"{pct:+.0f}% acima da base, boa recuperação"
-    return _v("hrv", "HRV", now, "", e, l,
-              f"média a 7 dias. Base de 28 dias: {base}. Diferença: {pct:+.0f}%",
+        e, l = "bom", t("l.hrv.alto", ln, pct=f"{pct:+.0f}%")
+    return _v("hrv", t("m.hrv", ln), now, "", e, l,
+              t("g.base", ln, base=base, delta=f"{pct:+.0f}%"),
               escala(-25, 15, [(-12, "alerta"), (-5, "cuidado"), (5, "bom"), (15, "bom")], pct),
-              "normal entre −5% e +5% da base",
-              "" if e == "bom" else "Dorme mais e adia a próxima sessão dura em um ou dois dias.")
+              t("a.hrv", ln), "" if e == "bom" else t("ac.hrv", ln))
 
 
-def sleep(hours) -> dict:
+def sleep(hours, ln: str) -> dict:
     if hours is None:
-        return _v("sono", "Sono", "sem dados", "", "bom", "sem dados suficientes")
+        return _v("sono", t("m.sono", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
     if hours < 6:
-        e, l = "alerta", "abaixo de 6 horas o treino deixa de render, por muito bem feito que seja"
+        e, l = "alerta", t("l.sono.alerta", ln)
     elif hours < 6.5:
-        e, l = "cuidado", "curto. Abaixo de 6 horas o plano passa a só sugerir sessões leves"
+        e, l = "cuidado", t("l.sono.curto", ln)
     elif hours < 7:
-        e, l = "atencao", "aceitável, mas há margem para melhorar"
+        e, l = "atencao", t("l.sono.aceitavel", ln)
     else:
-        e, l = "bom", "suficiente para sustentar a carga"
-    return _v("sono", "Sono", hours, "h", e, l, "média das últimas 7 noites",
+        e, l = "bom", t("l.sono.bom", ln)
+    return _v("sono", t("m.sono", ln), hours, "h", e, l, t("g.sono", ln),
               escala(4, 9, [(6, "alerta"), (6.5, "cuidado"), (7, "atencao"), (9, "bom")], hours),
-              "7 horas ou mais sustentam a carga de treino",
-              "" if e == "bom" else "Deitar meia hora mais cedo rende mais do que qualquer sessão extra.")
+              t("a.sono", ln), "" if e == "bom" else t("ac.sono", ln))
 
 
-def ramp(value) -> dict:
+def ramp(value, ln: str) -> dict:
     if value is None:
-        return _v("ramp", "Progressão", "sem dados", "", "bom", "sem semanas anteriores para comparar")
+        return _v("ramp", t("m.ramp", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
     if value > 1.5:
-        e, l = "alerta", "salto grande de mais face às semanas anteriores"
+        e, l = "alerta", t("l.ramp.alerta", ln)
     elif value > 1.3:
-        e, l = "cuidado", "acima de 1.3, o intervalo onde as lesões aparecem"
+        e, l = "cuidado", t("l.ramp.alto", ln)
     elif value >= 0.8:
-        e, l = "bom", "entre 0.8 e 1.3, progressão sustentável"
+        e, l = "bom", t("l.ramp.bom", ln)
     elif value >= 0.5:
-        e, l = "atencao", "abaixo de 0.8: semana mais leve do que as anteriores"
+        e, l = "atencao", t("l.ramp.leve", ln)
     else:
-        e, l = "cuidado", "muito abaixo das semanas anteriores, a forma vai cair"
-    return _v("ramp", "Progressão", value, "", e, l,
-              "carga da última semana a dividir pela média das anteriores",
+        e, l = "cuidado", t("l.ramp.muito_leve", ln)
+    acao = "" if e == "bom" else t("ac.ramp.subir" if value < 0.8 else "ac.ramp.segurar", ln)
+    return _v("ramp", t("m.ramp", ln), value, "", e, l, t("g.ramp", ln),
               escala(0, 2, [(0.5, "cuidado"), (0.8, "atencao"), (1.3, "bom"),
                             (1.5, "cuidado"), (2, "alerta")], value),
-              "sustentável entre 0.8 e 1.3",
-              "" if e == "bom" else ("Sobe o volume devagar, cerca de 10% por semana."
-                                     if value < 0.8 else "Segura a próxima semana no mesmo volume."))
+              t("a.ramp", ln), acao)
 
 
-def days_since_hard(days) -> dict:
+def days_since_hard(days, ln: str) -> dict:
     if days is None:
-        return _v("dsh", "Dias desde sessão dura", "sem dados", "", "atencao",
-                  "sem nenhuma sessão dura no histórico recente")
+        return _v("dsh", t("m.dsh", ln), t("g.sem_dados", ln), "", "atencao", t("l.dsh.nenhuma", ln))
     if days > 21:
-        e, l = "cuidado", "há muito sem estímulo intenso; a velocidade perde-se primeiro"
+        e, l = "cuidado", t("l.dsh.muito", ln)
     elif days > 14:
-        e, l = "atencao", "já vai longe sem uma sessão exigente"
+        e, l = "atencao", t("l.dsh.algum", ln)
     elif days < 2:
-        e, l = "atencao", "sessão dura muito recente, cuidado com a seguinte"
+        e, l = "atencao", t("l.dsh.recente", ln)
     else:
-        e, l = "bom", "espaçamento adequado"
-    return _v("dsh", "Dias desde sessão dura", days, "dias", e, l,
-              "uma sessão dura é carga de 100 ou mais",
+        e, l = "bom", t("l.dsh.bom", ln)
+    acao = "" if e == "bom" else t("ac.dsh.meter" if days > 14 else "ac.dsh.esperar", ln)
+    return _v("dsh", t("m.dsh", ln), days, "d", e, l, t("g.dsh", ln),
               escala(0, 25, [(2, "atencao"), (14, "bom"), (21, "atencao"), (25, "cuidado")], days),
-              "entre 2 e 14 dias mantém o estímulo sem acumular fadiga",
-              "" if e == "bom" else ("Mete intervalos ou um contínuo forte esta semana."
-                                     if days > 14 else "Deixa passar mais um dia fácil."))
+              t("a.dsh", ln), acao)
 
 
-def volume(minutes_7d, mean_week_minutes) -> dict:
+def volume(minutes_7d, mean_week_minutes, ln: str) -> dict:
     if not mean_week_minutes:
-        return _v("vol", "Volume 7 dias", minutes_7d, "min", "bom", "sem histórico para comparar")
+        return _v("vol", t("m.vol", ln), minutes_7d, "min", "bom", t("l.vol.sem_base", ln))
     razao = minutes_7d / mean_week_minutes
     if razao < 0.6:
-        e, l = "atencao", f"bem abaixo da média do mês ({mean_week_minutes} min)"
+        e, l = "atencao", t("l.vol.baixo", ln, media=mean_week_minutes)
     elif razao > 1.4:
-        e, l = "cuidado", f"bem acima da média do mês ({mean_week_minutes} min)"
+        e, l = "cuidado", t("l.vol.alto", ln, media=mean_week_minutes)
     else:
-        e, l = "bom", f"em linha com a média do mês ({mean_week_minutes} min)"
-    return _v("vol", "Volume 7 dias", minutes_7d, "min", e, l,
-              f"média das semanas com treino: {mean_week_minutes} min",
+        e, l = "bom", t("l.vol.bom", ln, media=mean_week_minutes)
+    acao = "" if e == "bom" else t("ac.vol.falta" if razao < 1 else "ac.vol.demais", ln)
+    return _v("vol", t("m.vol", ln), minutes_7d, "min", e, l,
+              t("g.vol", ln, media=mean_week_minutes),
               escala(0, 2, [(0.6, "atencao"), (1.4, "bom"), (2, "cuidado")], razao),
-              "entre 60% e 140% da média do mês",
-              "" if e == "bom" else ("Falta volume face ao teu normal."
-                                     if razao < 1 else "Semana pesada: a seguinte deve ser mais leve."))
+              t("a.vol", ln), acao)
 
 
-def peso(b: dict, alvo=(-0.75, -0.25)) -> dict | None:
+def peso(b: dict, ln: str, alvo=(-0.75, -0.25)) -> dict | None:
     """Peso e ritmo de variação, quando há pesagens que o sustentem.
 
     O ritmo é lido em percentagem do peso corporal por semana, não em quilos:
@@ -221,83 +212,79 @@ def peso(b: dict, alvo=(-0.75, -0.25)) -> dict | None:
         return None
 
     kg, velhos = b["kg"], b["days_old"]
-    extra = []
+    gloss = t("g.peso", ln, data=b["date"])
     if b.get("bmi"):
-        extra.append(f"IMC {b['bmi']}")
-    if b.get("body_fat"):
-        extra.append(f"massa gorda {b['body_fat']}%")
-    gloss = f"pesagem de {b['date']}" + (", " + ", ".join(extra) if extra else "")
+        gloss += f", IMC {b['bmi']}" if ln == "pt" else f", BMI {b['bmi']}"
 
     if velhos > 21:
-        return _v("peso", "Peso", kg, "kg", "atencao",
-                  f"a última pesagem foi há {velhos} dias, não dá para ver tendência",
-                  gloss, None, "",
-                  "Pesa-te uma vez por semana, em jejum e sempre à mesma hora.")
+        return _v("peso", t("m.peso", ln), kg, "kg", "atencao",
+                  t("l.peso.velho", ln, dias=velhos), gloss, None, "",
+                  t("ac.peso.pesar", ln))
 
     ritmo = b.get("kg_per_week")
     if ritmo is None:
-        return _v("peso", "Peso", kg, "kg", "atencao",
-                  "poucas pesagens para calcular uma tendência", gloss, None, "",
-                  "Pesa-te uma vez por semana para o plano poder acompanhar.")
+        return _v("peso", t("m.peso", ln), kg, "kg", "atencao",
+                  t("l.peso.poucas", ln), gloss, None, "", t("ac.peso.pesar_mais", ln))
 
     pct = ritmo / kg * 100 if kg else 0
     baixo, alto = alvo
     if pct < baixo * 1.5:
-        e, l = "cuidado", f"a descer {abs(ritmo):.2f} kg por semana, depressa de mais"
-        acao = "Come mais nos dias de treino: a esta velocidade perde-se músculo."
+        e, l, acao = "cuidado", t("l.peso.rapido", ln, kg=f"{abs(ritmo):.2f}"), t("ac.peso.comer", ln)
     elif pct <= alto:
-        e, l = "bom", f"a descer {abs(ritmo):.2f} kg por semana, no ritmo certo"
-        acao = ""
+        e, l, acao = "bom", t("l.peso.certo", ln, kg=f"{abs(ritmo):.2f}"), ""
     elif pct <= 0.1:
-        e, l = "atencao", "praticamente estável nas últimas semanas"
-        acao = "O plano acrescenta volume fácil; a diferença maior vem da mesa."
+        e, l, acao = "atencao", t("l.peso.estavel", ln), t("ac.peso.mesa", ln)
     else:
-        e, l = "cuidado", f"a subir {ritmo:.2f} kg por semana"
-        acao = "Vale a pena olhar para a alimentação antes de acrescentar treino."
+        e, l, acao = "cuidado", t("l.peso.sobe", ln, kg=f"{ritmo:.2f}"), t("ac.peso.olhar", ln)
 
-    return _v("peso", "Peso", kg, "kg", e, l, gloss,
+    return _v("peso", t("m.peso", ln), kg, "kg", e, l, gloss,
               escala(-1.2, 0.6, [(baixo * 1.5, "cuidado"), (alto, "bom"),
                                  (0.1, "atencao"), (0.6, "cuidado")], ritmo),
-              f"perder entre {abs(alto) * kg / 100:.2f} e {abs(baixo) * kg / 100:.2f} kg por semana",
+              t("a.peso", ln, min=f"{abs(alto) * kg / 100:.2f}", max=f"{abs(baixo) * kg / 100:.2f}"),
               acao)
 
 
 ORDEM = {"alerta": 0, "cuidado": 1, "atencao": 2, "bom": 3}
 
 
-def assess(m: dict) -> list[dict]:
+def assess(m: dict, ln: str = "en") -> list[dict]:
     """Todas as leituras, das mais graves para as mais tranquilas."""
     load, rec, month = m["load"], m["recovery"], m["month"]
     fichas = [
-        tsb(load["tsb"]),
-        ctl(load["ctl"], load.get("ctl_delta", 0.0)),
-        volume(load["minutes_7d"], month.get("mean_week_minutes", 0)),
-        ramp(month["ramp"]),
-        rhr(rec["rhr_7d"], rec["rhr_28d"]),
-        hrv(rec["hrv_7d"], rec["hrv_28d"]),
-        sleep(rec["sleep_h_7d"]),
-        days_since_hard(load["days_since_hard"]),
+        tsb(load["tsb"], ln),
+        ctl(load["ctl"], load.get("ctl_delta", 0.0), ln),
+        volume(load["minutes_7d"], month.get("mean_week_minutes", 0), ln),
+        ramp(month["ramp"], ln),
+        rhr(rec["rhr_7d"], rec["rhr_28d"], ln),
+        hrv(rec["hrv_7d"], rec["hrv_28d"], ln),
+        sleep(rec["sleep_h_7d"], ln),
+        days_since_hard(load["days_since_hard"], ln),
     ]
-    ficha_peso = peso(m.get("body", {}))
+    ficha_peso = peso(m.get("body", {}), ln)
     if ficha_peso:
         fichas.append(ficha_peso)
+    for f in fichas:
+        f["rotulo"] = rotulo(f["estado"], ln)
     return sorted(fichas, key=lambda f: ORDEM[f["estado"]])
 
 
 # Os nomes que a Garmin usa internamente não são para ler.
 DESPORTOS = {
-    "running": "Corrida", "treadmill_running": "Passadeira",
-    "trail_running": "Trail", "indoor_running": "Corrida interior",
-    "walking": "Caminhada", "hiking": "Caminhada na natureza",
-    "cycling": "Ciclismo", "indoor_cycling": "Bicicleta interior",
-    "mountain_biking": "BTT", "road_biking": "Estrada",
-    "swimming": "Natação", "lap_swimming": "Natação em piscina",
-    "open_water_swimming": "Águas abertas",
-    "strength_training": "Força", "indoor_cardio": "Cardio interior",
-    "elliptical": "Elíptica", "rowing": "Remo", "yoga": "Ioga",
-    "unknown": "Sem categoria",
+    "running": ("Corrida", "Run"), "treadmill_running": ("Passadeira", "Treadmill"),
+    "trail_running": ("Trail", "Trail run"), "indoor_running": ("Corrida interior", "Indoor run"),
+    "walking": ("Caminhada", "Walk"), "hiking": ("Caminhada na natureza", "Hike"),
+    "cycling": ("Ciclismo", "Cycling"), "indoor_cycling": ("Bicicleta interior", "Indoor cycling"),
+    "mountain_biking": ("BTT", "Mountain biking"), "road_biking": ("Estrada", "Road cycling"),
+    "swimming": ("Natação", "Swimming"), "lap_swimming": ("Natação em piscina", "Pool swim"),
+    "open_water_swimming": ("Águas abertas", "Open water swim"),
+    "strength_training": ("Força", "Strength"), "indoor_cardio": ("Cardio interior", "Indoor cardio"),
+    "elliptical": ("Elíptica", "Elliptical"), "rowing": ("Remo", "Rowing"),
+    "yoga": ("Ioga", "Yoga"), "unknown": ("Sem categoria", "Uncategorised"),
 }
 
 
-def desporto(chave: str) -> str:
-    return DESPORTOS.get(chave, chave.replace("_", " ").capitalize())
+def desporto(chave: str, ln: str = "en") -> str:
+    par = DESPORTOS.get(chave)
+    if par:
+        return par[1] if ln == "en" else par[0]
+    return chave.replace("_", " ").capitalize()

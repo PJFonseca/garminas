@@ -73,10 +73,18 @@ def identidade(db: Path) -> dict:
         ultimo = campo("user_profile_base", "lastName")
         nome = " ".join(x for x in (primeiro, ultimo) if x) or None
 
+    # O idioma vem da conta, não de quem instalou. Sem ele, inglês.
+    locale = (campo("personal_info", "locale")
+              or campo("user_profile_base", "locale") or "")
+    from idioma import escolher
+    idioma = escolher(str(locale) if locale else None)
+
     return {
         "nome": nome,
         "primeiro": campo("user_profile_base", "firstName") or (nome or "").split(" ")[0],
         "foto_url": campo("social_profile", "profileImageUrlLarge", "profileImageUrlMedium"),
+        "locale": locale or None,
+        "idioma": idioma,
     }
 
 
@@ -112,9 +120,12 @@ def escrever(pasta: Path, dados: dict) -> None:
 def registar(pasta: Path) -> dict:
     """Preenche nome e fotografia a partir da base de dados, se ainda faltarem."""
     dados = ler(pasta)
-    if dados.get("nome") and dados.get("foto"):
+    if dados.get("nome") and dados.get("foto") and dados.get("idioma"):
         return dados
     quem = identidade(pasta / "garmin.db")
+    if quem.get("idioma"):
+        dados.setdefault("idioma", quem["idioma"])
+        dados.setdefault("locale", quem.get("locale"))
     if quem.get("nome"):
         dados.setdefault("nome", quem["nome"])
         dados.setdefault("primeiro", quem.get("primeiro") or quem["nome"].split(" ")[0])
@@ -141,6 +152,7 @@ def listar() -> list[dict]:
             "foto": dados.get("foto"),
             "tem_db": (pasta / "garmin.db").exists(),
             "tem_senha": bool(dados.get("senha")),
+            "idioma": dados.get("idioma", "en"),
         })
     return sorted(saida, key=lambda p: p["primeiro"].lower())
 

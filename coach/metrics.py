@@ -342,6 +342,97 @@ def body(con, spec, today: date) -> dict:
     }
 
 
+def sessao_recente(acts: list[dict], ritmos: dict, today: date) -> dict:
+    """Como correu a última sessão, comparada com as anteriores.
+
+    Tudo o que é comparação fica feito aqui. O modelo recebe frases prontas e
+    limita-se a juntá-las; já se viu o que acontece quando lhe pedem para
+    comparar números sozinho.
+    """
+    if not acts:
+        return {"has_data": False}
+
+    ultima = acts[-1]
+    if not ultima["duration_s"]:
+        return {"has_data": False}
+
+    minutos = ultima["duration_s"] / 60
+    kmh = (ultima["distance_m"] / 1000) / (ultima["duration_s"] / 3600) if ultima["distance_m"] else 0
+
+    anteriores = [a for a in acts[:-1] if a["date"] >= today - timedelta(days=56)]
+    com_ritmo = [((a["distance_m"] / 1000) / (a["duration_s"] / 3600))
+                 for a in anteriores if a["distance_m"] and a["duration_s"]]
+
+    notas = []
+    if kmh and com_ritmo:
+        mais_rapidas = [v for v in com_ritmo if v > kmh]
+        if not mais_rapidas:
+            notas.append("foi a tua sessão mais rápida das últimas oito semanas")
+        elif len(mais_rapidas) <= 2:
+            n = len(mais_rapidas)
+            notas.append(f"só {n} {'sessão' if n == 1 else 'sessões'} das últimas oito semanas "
+                         f"{'foi' if n == 1 else 'foram'} mais {'rápida' if n == 1 else 'rápidas'}")
+        media = sum(com_ritmo) / len(com_ritmo)
+        if kmh > media * 1.08:
+            notas.append(f"correste a {kmh:.1f} km/h, acima da tua média recente de {media:.1f}")
+        elif kmh < media * 0.92:
+            notas.append(f"correste a {kmh:.1f} km/h, abaixo da tua média recente de {media:.1f}")
+
+    duracoes = [a["duration_s"] / 60 for a in anteriores]
+    if duracoes:
+        media_min = sum(duracoes) / len(duracoes)
+        if minutos > media_min * 1.25:
+            notas.append(f"durou {round(minutos)} minutos, bem mais do que os {round(media_min)} habituais")
+        elif minutos < media_min * 0.75:
+            notas.append(f"foi curta, {round(minutos)} minutos contra os {round(media_min)} habituais")
+
+    if ultima["avg_hr"] and ritmos.get("has_data") and kmh:
+        if kmh >= ritmos["forte"] - 0.2:
+            notas.append(f"a {kmh:.1f} km/h estiveste no teu terreno forte")
+        elif kmh <= ritmos["facil"] + 0.2:
+            notas.append(f"a {kmh:.1f} km/h ficaste em ritmo fácil, que é onde se constrói a base")
+
+    hrs = [a["avg_hr"] for a in anteriores if a["avg_hr"]]
+    if ultima["avg_hr"] and hrs:
+        media_hr = sum(hrs) / len(hrs)
+        if ultima["avg_hr"] > media_hr + 8:
+            notas.append(f"a FC média foi {round(ultima['avg_hr'])}, acima das {round(media_hr)} habituais")
+        elif ultima["avg_hr"] < media_hr - 8:
+            notas.append(f"a FC média foi {round(ultima['avg_hr'])}, abaixo das {round(media_hr)} habituais")
+
+    # O veredicto, para a pessoa não ter de o deduzir dos números. Uma sessão
+    # não é boa ou má em absoluto: é boa se serviu para alguma coisa.
+    rapida = bool(kmh and com_ritmo and kmh > (sum(com_ritmo) / len(com_ritmo)) * 1.08)
+    longa = bool(duracoes and minutos > (sum(duracoes) / len(duracoes)) * 1.25)
+    facil = bool(kmh and ritmos.get("has_data") and kmh <= ritmos["facil"] + 0.2)
+
+    if rapida and longa:
+        estado, veredicto = "forte", "Sessão forte: mais rápida e mais longa do que o teu costume."
+    elif rapida:
+        estado, veredicto = "forte", "Bom estímulo: correste acima do teu ritmo habitual."
+    elif longa:
+        estado, veredicto = "boa", "Boa sessão de volume: mais longa do que o teu costume."
+    elif facil:
+        estado, veredicto = "base", "Sessão de base, ao ritmo certo para construir aeróbio."
+    else:
+        estado, veredicto = "normal", "Sessão dentro do teu normal."
+
+    return {
+        "has_data": True,
+        "estado": estado,
+        "veredicto": veredicto,
+        "date": ultima["date"].isoformat(),
+        "hoje": ultima["date"] == today,
+        "sport": ultima["sport"],
+        "minutes": round(minutos),
+        "km": round(ultima["distance_m"] / 1000, 1),
+        "kmh": round(kmh, 1) if kmh else None,
+        "avg_hr": round(ultima["avg_hr"]) if ultima["avg_hr"] else None,
+        "load": round(ultima["load"]),
+        "notas": notas,
+    }
+
+
 def build(con) -> dict:
     spec = yaml.safe_load(SCHEMA.read_text())
     today = date.today()
@@ -408,6 +499,7 @@ def build(con) -> dict:
         "recent": recent_sessions(acts),
         "body": body(con, spec.get("weight", {"table": []}), today),
         "paces": paces(acts),
+        "sessao": sessao_recente(acts, paces(acts), today),
         "windows": {"7d": summarise_window(acts, today, 7),
                     "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),
