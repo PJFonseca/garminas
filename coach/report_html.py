@@ -2,7 +2,7 @@
 """Desenha o relatório a partir dos dados, não do markdown.
 
 O markdown continua a ser a versão canónica. Aqui interessa outra coisa: que
-uma pessoa abra a página de manhã e perceba o essencial em três segundos —
+uma pessoa abra a página de manhã e perceba o essencial em três segundos:
 como está, o que faz hoje, e se alguma coisa merece atenção.
 
 Cores tiradas da paleta validada da orientação de visualização: azul para
@@ -32,7 +32,7 @@ CSS = """
 .today b { font-size:1.05rem; }
 .today .muted { color:var(--dim); }
 
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(20rem,1fr)); gap:.7rem; margin:.75rem 0 1.5rem; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(19rem,1fr)); gap:.7rem; margin:.75rem 0 1.5rem; }
 .tile { border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
 .tile .head { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
 .tile .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
@@ -78,6 +78,12 @@ CSS = """
 .day .m { font-size:.78rem; color:var(--dim); font-variant-numeric:tabular-nums; }
 .day.rest .s { font-weight:500; color:var(--dim); }
 
+/* Painéis. O texto corrido nunca alarga: acima de ~70 caracteres por linha
+   o olho perde a linha seguinte, e a página larga só piorava a leitura. */
+.painéis { display:grid; grid-template-columns:1fr; gap:1.75rem; align-items:start; }
+@media (min-width:64rem) { .painéis { grid-template-columns:1fr 1fr; gap:2.25rem; } }
+.painel > h2:first-child, .painel > h3:first-child { margin-top:0; }
+.prose, .legend, .callout, .resumo p { max-width:68ch; }
 .prose { border-left:3px solid var(--line); padding:.1rem 0 .1rem 1rem; margin:.75rem 0 1.5rem; }
 .prose p { margin:.4rem 0; }
 .prose ol { margin:.4rem 0; padding-left:1.2rem; }
@@ -204,7 +210,7 @@ def _plan(days: list[dict], hoje: str) -> str:
     cards = []
     for d in days:
         css, label = _intensity(d["load_est"])
-        minutos = f'{d["duration_min"]} min' if d["duration_min"] else "—"
+        minutos = f'{d["duration_min"]} min' if d["duration_min"] else "sem treino"
         cards.append(
             f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}">'
             f'<span class=tip>{label} · carga estimada {d["load_est"]} · '
@@ -246,7 +252,7 @@ def report_html(d: dict) -> str:
     if d.get("today_done"):
         s = d["today_done"]
         km = f', {s["km"]} km' if s["km"] else ""
-        agora = (f'<b>Já treinaste hoje</b> — {escape(desporto(s["sport"]))}, {s["minutes"]} min{km}, '
+        agora = (f'<b>Já treinaste hoje:</b> {escape(desporto(s["sport"]))}, {s["minutes"]} min{km}, '
                  f'carga {s["load"]}. <span class=muted>O plano começa amanhã.</span>')
     else:
         p0 = plan["days"][0]
@@ -257,54 +263,63 @@ def report_html(d: dict) -> str:
     if d["flags"]:
         itens = "".join(f"<li>{escape(f)}</li>" for f in d["flags"])
         flags = (f'<div class=callout><h3>⚠ Bandeiras de recuperação</h3><ul>{itens}</ul>'
-                 f'<p class=legend>Enquanto durarem, só sessões de recuperação ficam elegíveis.</p></div>')
+                 f'<p class=legend>Enquanto durarem, o plano só sugere sessões leves.</p></div>')
 
     sessoes = "".join(
         f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"]))}</td>'
-        f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or "—"}</td>'
-        f'<td class=num>{s["avg_hr"] or "—"}</td><td class=num>{s["load"]}</td></tr>'
+        f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or ""}</td>'
+        f'<td class=num>{s["avg_hr"] or ""}</td><td class=num>{s["load"]}</td></tr>'
         for s in m["recent"])
 
     resumo = plan["summary"]
     return f"""<div class=viz>
 <div class=hero><h1>Treino</h1><span class=date>{hoje}</span>
   <span class="badge {cls}">{icone} {estado}</span></div>
-<div class=today>{agora}</div>
-{flags}
 
-{resumo_html}
+<div class=painéis>
+  <div class=painel><div class=today>{agora}</div></div>
+  <div class=painel>{flags}{resumo_html}</div>
+</div>
 
 <h2>Estado</h2>
 {LEGENDA}
 <div class=tiles>{"".join(_tile(f) for f in fichas)}</div>
 
-<h2>Análise</h2>
-{_prose(d.get("analysis"))}
+<div class=painéis>
+  <div class=painel>
+    <h2>Análise</h2>
+    {_prose(d.get("analysis"))}
+    <h2>Carga por semana</h2>
+    {_chart(month["weeks"])}
+    <p class=legend>Progressão: <b>{escape(d["ramp_verdict"])}</b>. {month["hard_sessions"]}
+      {"sessão dura" if month["hard_sessions"] == 1 else "sessões duras"} e
+      {month["rest_days"]} dias sem treino em 28. Sessão mais longa {month["longest_min"]} min.</p>
+  </div>
+  <div class=painel>
+    <h2>Plano para os próximos {len(plan["days"])} dias</h2>
+    {_plan(plan["days"], hoje)}
+    <p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
+      CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
+      Calculado a partir das regras, não escrito pelo modelo.</p>
+  </div>
+</div>
 
-<h2>Carga por semana</h2>
-{_chart(month["weeks"])}
-<p class=legend>Progressão: <b>{escape(d["ramp_verdict"])}</b>. {month["hard_sessions"]}
-  {"sessão dura" if month["hard_sessions"] == 1 else "sessões duras"} e
-  {month["rest_days"]} dias sem treino em 28. Sessão mais longa {month["longest_min"]} min.</p>
-
-<h2>Plano — próximos {len(plan["days"])} dias</h2>
-{_plan(plan["days"], hoje)}
-<p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
-  CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
-  Calculado a partir das regras, não escrito pelo modelo.</p>
-
-<h2>Recomendação</h2>
-{_prose(d.get("review"))}
-
-<h3>Quando abrandar</h3>
-<p class=legend>{escape(d["slow_down"])}</p>
-
-<h2>Treinos recentes</h2>
-<div class=wrap><table>
-  <tr><th>Data</th><th>Desporto</th><th class=num>Min</th><th class=num>km</th>
-      <th class=num>FC média</th><th class=num>Carga</th></tr>
-  {sessoes}
-</table></div>
+<div class=painéis>
+  <div class=painel>
+    <h2>Recomendação</h2>
+    {_prose(d.get("review"))}
+    <h3>Quando abrandar</h3>
+    <p class=legend>{escape(d["slow_down"])}</p>
+  </div>
+  <div class=painel>
+    <h2>Treinos recentes</h2>
+    <div class=wrap><table>
+      <tr><th>Data</th><th>Desporto</th><th class=num>Min</th><th class=num>km</th>
+          <th class=num>FC média</th><th class=num>Carga</th></tr>
+      {sessoes}
+    </table></div>
+  </div>
+</div>
 
 <hr>
 <p class=legend>Orientação genérica gerada a partir dos teus próprios dados. Não substitui

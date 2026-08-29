@@ -92,7 +92,8 @@ services:
         --n-predict 384
     volumes:
       - ./models:/models:ro,z
-    # A NAS tem 16 GB; o limite real são os 2 núcleos, daí um 4B.
-    mem_limit: 6g
+    # Um 4B em Q4 precisa de cerca de 4 GB; um 12B de perto de 10. Se o
+    # limite ficar abaixo do modelo, o container morre sem explicação útil.
+    mem_limit: ${LLM_MEM:-6g}
     networks:
       - default

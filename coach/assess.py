@@ -2,7 +2,7 @@
 """Traduz cada número numa leitura: bom, a vigiar, ou a corrigir.
 
 Um relatório cheio de valores sem veredicto obriga a pessoa a saber de
-periodização para o ler — e quem sabe de periodização não precisa do
+periodização para o ler, e quem sabe de periodização não precisa do
 relatório. Por isso cada métrica traz um estado e uma frase que diz porquê.
 
 Os limiares são convenções de treino, não verdades: TSB pelas bandas
@@ -71,11 +71,11 @@ def tsb(value: float) -> dict:
     elif value <= 25:
         e, l = "bom", "fresco, bom momento para uma sessão exigente"
     else:
-        e, l = "cuidado", "demasiado fresco: já se perde forma por falta de treino"
-    return _v("tsb", "Frescura", value, "", e, l, "TSB — forma menos fadiga",
+        e, l = "cuidado", "demasiado fresco, já se perde forma por falta de treino"
+    return _v("tsb", "Frescura", value, "", e, l, "TSB, a forma menos a fadiga",
               escala(-40, 30, [(-25, "alerta"), (-10, "atencao"), (5, "bom"),
                                (25, "bom"), (30, "cuidado")], value),
-              "confortável entre −10 e +5; acima de +25 já é falta de treino",
+              "confortável entre −10 e +5. Acima de +25 já é falta de treino",
               "" if e == "bom" else ("Precisas de dias fáceis antes da próxima sessão dura."
                                      if value < -10 else "Aproveita para treinar a sério."))
 
@@ -90,15 +90,15 @@ def ctl(value: float, delta: float) -> dict:
     else:
         e, l = "cuidado", f"a descer {delta:.1f} em quatro semanas, a perder base aeróbia"
     return _v("ctl", "Forma de fundo", value, "", e, l,
-              f"CTL — média de carga a 42 dias · há 4 semanas estava em {round(value - delta, 1)}",
+              f"CTL, média da carga a 42 dias. Há quatro semanas estava em {round(value - delta, 1)}",
               escala(-8, 8, [(-4, "cuidado"), (-1, "atencao"), (2, "bom"), (8, "bom")], delta),
-              "o que interessa é a direção: subir devagar, sem saltos",
+              "o que interessa é a direção, a subir devagar e sem saltos",
               "" if e == "bom" else "Acrescenta uma sessão fácil por semana antes de acrescentar intensidade.")
 
 
 def rhr(now, base) -> dict:
     if now is None or base is None:
-        return _v("rhr", "FC de repouso", "—", "bpm", "bom", "sem dados suficientes")
+        return _v("rhr", "FC de repouso", "sem dados", "", "bom", "sem dados suficientes")
     d = now - base
     if d > 5:
         e, l = "alerta", f"{d:+.1f} bpm acima da base: o corpo está a pedir descanso"
@@ -109,7 +109,7 @@ def rhr(now, base) -> dict:
     else:
         e, l = "bom", f"{d:.1f} bpm abaixo da base, sinal de boa recuperação"
     return _v("rhr", "FC de repouso", now, "bpm", e, l,
-              f"média a 7 dias · base de 28 dias {base} · diferença {d:+.1f} bpm",
+              f"média a 7 dias. Base de 28 dias: {base}. Diferença: {d:+.1f} bpm",
               escala(-4, 8, [(-1, "bom"), (2, "bom"), (5, "cuidado"), (8, "alerta")], d),
               "normal até 2 bpm acima da base",
               "" if e == "bom" else "Trata como sinal de fadiga ou infeção: descansa e reavalia amanhã.")
@@ -117,7 +117,7 @@ def rhr(now, base) -> dict:
 
 def hrv(now, base) -> dict:
     if now is None or base is None:
-        return _v("hrv", "HRV", "—", "", "bom", "sem dados suficientes")
+        return _v("hrv", "HRV", "sem dados", "", "bom", "sem dados suficientes")
     pct = (now - base) / base * 100 if base else 0
     if pct < -12:
         e, l = "alerta", f"{pct:.0f}% abaixo da base: sistema nervoso sob stress"
@@ -128,7 +128,7 @@ def hrv(now, base) -> dict:
     else:
         e, l = "bom", f"{pct:+.0f}% acima da base, boa recuperação"
     return _v("hrv", "HRV", now, "", e, l,
-              f"média a 7 dias · base de 28 dias {base} · diferença {pct:+.0f}%",
+              f"média a 7 dias. Base de 28 dias: {base}. Diferença: {pct:+.0f}%",
               escala(-25, 15, [(-12, "alerta"), (-5, "cuidado"), (5, "bom"), (15, "bom")], pct),
               "normal entre −5% e +5% da base",
               "" if e == "bom" else "Dorme mais e adia a próxima sessão dura em um ou dois dias.")
@@ -136,24 +136,24 @@ def hrv(now, base) -> dict:
 
 def sleep(hours) -> dict:
     if hours is None:
-        return _v("sono", "Sono", "—", "h", "bom", "sem dados suficientes")
+        return _v("sono", "Sono", "sem dados", "", "bom", "sem dados suficientes")
     if hours < 6:
-        e, l = "alerta", "abaixo de 6 h: é aqui que o treino deixa de render"
+        e, l = "alerta", "abaixo de 6 horas o treino deixa de render, por muito bem feito que seja"
     elif hours < 6.5:
-        e, l = "cuidado", "curto; abaixo de 6 h corta o catálogo a recuperação"
+        e, l = "cuidado", "curto. Abaixo de 6 horas o plano passa a só sugerir sessões leves"
     elif hours < 7:
         e, l = "atencao", "aceitável, mas há margem para melhorar"
     else:
         e, l = "bom", "suficiente para sustentar a carga"
     return _v("sono", "Sono", hours, "h", e, l, "média das últimas 7 noites",
               escala(4, 9, [(6, "alerta"), (6.5, "cuidado"), (7, "atencao"), (9, "bom")], hours),
-              "7 h ou mais sustenta a carga; abaixo de 6 h o treino deixa de render",
+              "7 horas ou mais sustentam a carga de treino",
               "" if e == "bom" else "Deitar meia hora mais cedo rende mais do que qualquer sessão extra.")
 
 
 def ramp(value) -> dict:
     if value is None:
-        return _v("ramp", "Progressão", "—", "", "bom", "sem semanas anteriores para comparar")
+        return _v("ramp", "Progressão", "sem dados", "", "bom", "sem semanas anteriores para comparar")
     if value > 1.5:
         e, l = "alerta", "salto grande de mais face às semanas anteriores"
     elif value > 1.3:
@@ -175,7 +175,7 @@ def ramp(value) -> dict:
 
 def days_since_hard(days) -> dict:
     if days is None:
-        return _v("dsh", "Dias desde sessão dura", "—", "", "atencao",
+        return _v("dsh", "Dias desde sessão dura", "sem dados", "", "atencao",
                   "sem nenhuma sessão dura no histórico recente")
     if days > 21:
         e, l = "cuidado", "há muito sem estímulo intenso; a velocidade perde-se primeiro"

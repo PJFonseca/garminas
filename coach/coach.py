@@ -88,6 +88,8 @@ Regras de língua, obrigatórias:
   "preservando". Usa orações com "que", "para" ou "porque".
 - Vocabulário: treino e não treinamento, desporto e não esporte, planear e não
   planejar, registo e não registro, ecrã e não tela, equipa e não time.
+- Não uses travessões. Onde te apetecer um, escolhe vírgula, dois pontos ou
+  parênteses.
 - Nunca fazes contas: citas apenas números que te são dados, tal como aparecem."""
 
 # Palavras que denunciam português do Brasil ou tradução do inglês. A troca é
@@ -161,6 +163,8 @@ def portugues_europeu(texto: str) -> tuple[bool, str]:
     gerundios = [g for g in GERUNDIO.findall(texto) if g.lower() not in NAO_GERUNDIO]
     if gerundios:
         return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
+    if "—" in texto or "–" in texto:
+        return False, "travessão"
     restos = [p for p in BRASILEIRISMOS if re.search(rf"\b{p}\b", texto, re.I)]
     if restos:
         return False, "vocabulário: " + ", ".join(restos)
@@ -247,7 +251,7 @@ def describe(label: str, now, base, unit: str = "") -> str:
         word = "acima da base"
     else:
         word = "abaixo da base"
-    return f"{label} {now}{unit}, base de 28 dias {base}{unit} — {word}"
+    return f"{label} {now}{unit}, base de 28 dias {base}{unit}, {word}"
 
 
 def analyse_training(m: dict, flags: list[str]) -> str | None:
@@ -261,7 +265,7 @@ def analyse_training(m: dict, flags: list[str]) -> str | None:
     """
     w14 = m["windows"]["14d"]
     leituras = "\n".join(
-        f"- {f['titulo']}: {f['valor']}{' ' + f['unidade'] if f['unidade'] else ''} — "
+        f"- {f['titulo']}: {f['valor']}{' ' + f['unidade'] if f['unidade'] else ''}, "
         f"{ESTADOS[f['estado']][2]}, {f['leitura']}"
         for f in assess(m))
 
@@ -312,7 +316,7 @@ Dias do plano sem treino: {', '.join(rest_days) if rest_days else 'nenhum'}.
 No total: {s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos.
 
 Escreve, em português europeu, sem numerar:
-Um parágrafo a explicar a lógica deste plano — porque estão as sessões duras
+Um parágrafo a explicar a lógica deste plano: porque estão as sessões duras
 onde estão, e para que servem os dias sem treino.
 Depois uma frase sobre o que vigiar durante as sessões.
 
@@ -324,7 +328,7 @@ noutro sítio do relatório. Não menciones dias nem sessões fora das listas.""
 def table(header: list[str], rows: list[list]) -> list[str]:
     return ["| " + " | ".join(header) + " |",
             "|" + "|".join("---" for _ in header) + "|"] + \
-           ["| " + " | ".join("—" if c is None else str(c) for c in r) + " |" for r in rows]
+           ["| " + " | ".join("" if c is None else str(c) for c in r) + " |" for r in rows]
 
 
 def slow_down_rule(rules: dict) -> str:
@@ -334,13 +338,13 @@ def slow_down_rule(rules: dict) -> str:
     abrandar é a ausência de bandeiras de recuperação'. Os números estão no
     workouts.yaml e não têm de ser adivinhados.
     """
-    return (f"Abranda o plano se acontecer qualquer uma destas: a FC de repouso a "
+    return (f"Abranda o plano se acontecer alguma destas coisas: a FC de repouso a "
             f"7 dias subir mais de {rules['rhr_delta_above']} bpm acima da base de 28 "
             f"dias, o HRV cair mais de {abs(rules['hrv_drop_pct_below'])}% abaixo da "
             f"base, o sono a 7 dias descer abaixo de {rules['sleep_h_below']} h, ou o "
-            f"TSB passar abaixo de {rules['tsb_below']}. Qualquer delas corta o "
-            f"catálogo às sessões de recuperação no relatório seguinte. Dor, tonturas "
-            f"ou sono partido valem por si, sem esperar por números.")
+            f"TSB passar abaixo de {rules['tsb_below']}. Se alguma acontecer, o "
+            f"relatório do dia seguinte passa a sugerir apenas sessões leves. Dor, "
+            f"tonturas ou sono partido valem por si, sem esperar por números.")
 
 
 def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
@@ -348,7 +352,7 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
-    lines = [f"# Treino — {m['generated']}", ""]
+    lines = [f"# Treino, {m['generated']}", ""]
 
     lines += ["## Estado", ""]
     lines += table(["Métrica", "Valor", "Leitura", "Porquê"],
@@ -396,10 +400,10 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   + f", carga {feito_hoje['load']}. O plano abaixo começa amanhã.", ""]
     else:
         lines += [f"**{today['name']}**"
-                  + (f" — {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
+                  + (f", {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
 
     s = plan["summary"]
-    lines += [f"## Plano — próximos {len(plan['days'])} dias", ""]
+    lines += [f"## Plano para os próximos {len(plan['days'])} dias", ""]
     lines += table(["Data", "Dia", "Sessão", "Min", "TSB projetado"],
                    [[d["date"], d["weekday"], d["name"], d["duration_min"], d["tsb_after"]]
                     for d in plan["days"]])

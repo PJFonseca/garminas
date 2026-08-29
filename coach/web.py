@@ -317,6 +317,7 @@ CSS = """
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 46rem; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+main.wide { max-width: 88rem; padding-inline: clamp(1.25rem, 3vw, 3rem); }
 h1 { font-size:1.5rem; letter-spacing:-.02em; margin:0 0 .25rem; }
 h2 { font-size:1.15rem; margin:2.25rem 0 .5rem; padding-bottom:.3rem; border-bottom:1px solid var(--line); }
 h3 { font-size:1rem; margin:1.5rem 0 .4rem; }
@@ -352,11 +353,14 @@ hr { border:0; border-top:1px solid var(--line); margin:2rem 0; }
 
 SHELL = """<!doctype html><html lang=pt><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>%(title)s</title><style>%(css)s</style><main>%(body)s</main>%(script)s"""
+<title>%(title)s</title><style>%(css)s</style><main class="%(cls)s">%(body)s</main>%(script)s"""
 
 
-def page(title: str, body: str, script: str = "") -> str:
-    return SHELL % {"title": title, "css": CSS, "body": body, "script": script}
+def page(title: str, body: str, script: str = "", wide: bool = False) -> str:
+    """wide serve o relatório, que tem painéis; o formulário fica estreito,
+    porque um campo de texto com 80 caracteres de largura não se lê melhor."""
+    return SHELL % {"title": title, "css": CSS, "body": body,
+                    "script": script, "cls": "wide" if wide else ""}
 
 
 @app.get("/")
@@ -502,7 +506,8 @@ def report(day: str | None = None):
     older = " · ".join(f'<a href="/relatorio/{d}">{d}</a>' for d in days[:14])
     return page("Treino — garmin-nas",
                 f'<nav><a href="/configurar">Configurar</a></nav>{corpo}'
-                f'<hr><h3>Anteriores</h3><p class=legend>{older or "nenhum"}</p>')
+                f'<hr><h3>Anteriores</h3><p class=legend>{older or "nenhum"}</p>',
+                wide=True)
 
 
 @app.get("/configurar")
