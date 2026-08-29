@@ -41,6 +41,25 @@ PORT = int(os.environ.get("WEB_PORT", "8090"))
 
 MFA_PROMPT = re.compile(r"MFA code", re.I)
 
+# O pseudo-terminal convence os programas de que falam com um terminal a
+# cores, e eles passam a intercalar sequências de escape. No browser isso
+# aparece como lixo do género "[0m" no meio das frases.
+ANSI = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])")
+
+# O upstream anuncia o avanço da sincronização como "Days 232-238/366".
+# Vale mais na barra do que perdido no meio do registo.
+SYNC_PROGRESS = re.compile(r"Days\s+\d+\s*-\s*(\d+)\s*/\s*(\d+)")
+
+# Nomes internos das fases e o que a pessoa lê.
+PHASES = {
+    "parado": "A começar",
+    "modelo": "A descarregar o modelo de linguagem",
+    "garmin": "A ligar à Garmin e a puxar o histórico",
+    "relatório": "A escrever o primeiro relatório",
+    "pronto": "Pronto",
+    "erro": "Falhou",
+}
+
 app = Flask(__name__)
 
 
@@ -62,16 +81,22 @@ class Job:
         self.running = False
 
     def say(self, line: str) -> None:
+        line = ANSI.sub("", line).rstrip()
+        if not line:
+            return
         with self.lock:
-            self.log.append(line.rstrip())
+            if self.log and self.log[-1] == line:
+                return                   # o upstream repete-se muito
+            self.log.append(line)
             del self.log[:-400]          # o histórico completo não interessa
 
     def snapshot(self) -> dict:
         with self.lock:
             return {
-                "phase": self.phase, "progress": self.progress,
+                "phase": PHASES.get(self.phase, self.phase),
                 "needs_mfa": self.needs_mfa, "error": self.error,
                 "done": self.done, "running": self.running,
+                "progress": self.progress,
                 "log": self.log[-40:],
             }
 
@@ -105,11 +130,17 @@ def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False) -> bool:
                     break
                 if not chunk:
                     break
-                buffer += chunk
+                buffer += chunk.replace("\r\n", "\n").replace("\r", "\n")
                 while "\n" in buffer:
                     line, buffer = buffer.split("\n", 1)
-                    if line.strip():
-                        job.say(line)
+                    if not line.strip():
+                        continue
+                    job.say(line)
+                    found = SYNC_PROGRESS.search(ANSI.sub("", line))
+                    if found:
+                        with job.lock:
+                            job.progress = min(100, round(int(found.group(1)) * 100
+                                                          / max(1, int(found.group(2)))))
 
                 if mfa_ok and MFA_PROMPT.search(buffer):
                     job.say(buffer.strip())
@@ -236,6 +267,9 @@ pre#log { background:color-mix(in srgb, var(--fg) 5%, transparent); border:1px s
   padding:.8rem; font-size:.82rem; line-height:1.45; max-height:22rem; overflow:auto; white-space:pre-wrap; }
 .bar { height:.5rem; background:var(--line); border-radius:99px; overflow:hidden; margin:.6rem 0; }
 .bar > i { display:block; height:100%; background:var(--accent); width:0; transition:width .3s; }
+.bar.wait { background:linear-gradient(90deg, var(--line) 0 40%, var(--accent) 50%, var(--line) 60% 100%);
+  background-size:250% 100%; animation:slide 1.6s linear infinite; }
+@keyframes slide { from { background-position:100% 0 } to { background-position:-150% 0 } }
 .err { color:var(--warn); font-weight:600; }
 .note-box { border-left:3px solid var(--line); padding:.3rem 0 .3rem .9rem; color:var(--dim); font-size:.9rem; }
 nav { display:flex; gap:1rem; font-size:.9rem; margin-bottom:1.5rem; }
@@ -329,9 +363,11 @@ def progress_page():
 const $ = s => document.querySelector(s);
 async function tick() {
   const s = await (await fetch('/estado')).json();
-  $('#phase').textContent = s.error ? 'Falhou: ' + s.error : 'Fase: ' + s.phase;
+  $('#phase').textContent = s.error ? 'Falhou: ' + s.error : s.phase + '…';
   if (s.error) $('#phase').className = 'err';
-  $('#bar').style.width = (s.progress ?? (s.done ? 100 : 0)) + '%';
+  const indeterminado = s.running && s.progress === null;
+  $('#bar').parentElement.classList.toggle('wait', indeterminado);
+  $('#bar').style.width = indeterminado ? '0' : (s.progress ?? (s.done ? 100 : 0)) + '%';
   $('#log').textContent = s.log.join('\\n') || 'a aguardar…';
   $('#log').scrollTop = $('#log').scrollHeight;
   $('#mfa').hidden = !s.needs_mfa;
