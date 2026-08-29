@@ -1,0 +1,51 @@
+services:
+  garmin:
+    # Por omissão puxa a imagem já construída do GHCR.
+    # Para construir localmente: docker compose build
+    image: ghcr.io/OWNER/garmin-nas:${GARMIN_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: garmin
+    hostname: garmin
+    restart: unless-stopped
+
+    # O Chrome precisa de memória partilhada generosa ou rebenta com
+    # "session deleted because of page crash".
+    shm_size: "1gb"
+
+    environment:
+      TZ: ${TZ:-Europe/Lisbon}
+      GARMIN_DATA_DIR: /data
+      LLM_URL: http://llm:8080/v1/chat/completions
+
+    volumes:
+      # Base de dados SQLite, ficheiros FIT, perfil do browser e credenciais.
+      # Ajustar o caminho do lado esquerdo ao teu NAS.
+      - ./data:/data
+
+    # O DS923+ traz 4 GB de base. O Chrome ocupa cerca de 1 GB em pico.
+    mem_limit: 2g
+
+    # Sem portas expostas: o container não serve nada, apenas sincroniza.
+    networks:
+      - default
+
+  # Modelo local. Opcional: sem ele o relatório sai na mesma, apenas sem a
+  # parte redigida. O DS923+ tem 2 núcleos, por isso 4B é o tecto sensato.
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: garmin-llm
+    restart: unless-stopped
+    command: >
+      -m /models/${MODEL_FILE:-model.gguf}
+      --host 0.0.0.0
+      --port 8080
+      --ctx-size 2048
+      --threads 4
+      --n-predict 384
+    volumes:
+      - ./models:/models:ro
+    mem_limit: 6g
+    networks:
+      - default

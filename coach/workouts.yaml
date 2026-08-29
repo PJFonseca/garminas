@@ -1,0 +1,96 @@
+# Catálogo de treinos. O motor filtra por regras; o modelo escolhe apenas de
+# entre os candidatos elegíveis e escreve a justificação. Isto impede que um
+# modelo pequeno invente sessões absurdas para o estado atual.
+#
+# Campos de elegibilidade (todos opcionais):
+#   tsb_min / tsb_max        janela de Training Stress Balance
+#   days_since_hard_min      dias desde a última sessão de carga >= 100
+#   ctl_min                  base aeróbia mínima antes de permitir a sessão
+#   requires_fresh           exige que não haja bandeira de recuperação ativa
+
+# --- Bloqueio de segurança ---------------------------------------------------
+# Se qualquer destas condições se verificar, só sessões marcadas
+# "recovery_safe" ficam elegíveis. Avaliado em código, não pelo modelo.
+recovery_flags:
+  rhr_delta_above: 5          # FC repouso 7d mais de 5 bpm acima da base 28d
+  hrv_drop_pct_below: -12     # HRV 7d mais de 12% abaixo da base
+  sleep_h_below: 6.0          # média de sono a 7 dias abaixo de 6 horas
+  tsb_below: -25              # fadiga acumulada excessiva
+
+workouts:
+  - id: rest
+    name: Descanso completo
+    recovery_safe: true
+    description: Sem treino estruturado. Caminhada leve se apetecer.
+
+  - id: easy_walk
+    name: Caminhada longa
+    recovery_safe: true
+    duration_min: 45
+    description: Ritmo conversável, zona 1. Mantém o hábito sem adicionar carga.
+
+  - id: easy_run
+    name: Corrida fácil
+    recovery_safe: true
+    duration_min: 35
+    tsb_min: -20
+    description: >
+      Zona 2 do princípio ao fim. Se não consegues falar em frases inteiras,
+      abranda. É esta sessão que constrói a base aeróbia.
+
+  - id: treadmill_base
+    name: Passadeira contínua
+    recovery_safe: true
+    duration_min: 40
+    tsb_min: -20
+    description: >
+      Inclinação 1%, ritmo constante em zona 2. A inclinação compensa a
+      ausência de resistência do ar.
+
+  - id: treadmill_intervals_short
+    name: Intervalos curtos na passadeira
+    duration_min: 35
+    tsb_min: -10
+    days_since_hard_min: 2
+    requires_fresh: true
+    description: >
+      10 min aquecimento, depois 8 x (1 min forte / 90 s a andar),
+      10 min a arrefecer. Entrada suave no trabalho anaeróbio.
+
+  - id: treadmill_intervals_long
+    name: Intervalos longos na passadeira
+    duration_min: 50
+    tsb_min: -5
+    ctl_min: 25
+    days_since_hard_min: 3
+    requires_fresh: true
+    description: >
+      15 min aquecimento, 5 x (3 min a ritmo forte / 2 min fácil),
+      10 min a arrefecer. Puxa pelo aeróbio alto.
+
+  - id: tempo
+    name: Contínuo em ritmo controlado
+    duration_min: 45
+    tsb_min: -8
+    ctl_min: 30
+    days_since_hard_min: 3
+    requires_fresh: true
+    description: >
+      15 min fácil, 20 min a ritmo de esforço confortavelmente difícil,
+      10 min fácil.
+
+  - id: long_run
+    name: Corrida longa
+    duration_min: 75
+    tsb_min: -12
+    ctl_min: 25
+    days_since_hard_min: 2
+    description: Tudo em zona 2. Aumentar no máximo 10% face à mais longa recente.
+
+  - id: strength
+    name: Força para corredores
+    recovery_safe: true
+    duration_min: 30
+    description: >
+      Agachamentos, afundos, elevação de gémeos, prancha. Duas a três séries.
+      Complementa sem competir pela mesma recuperação.

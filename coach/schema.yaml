@@ -1,0 +1,45 @@
+# Mapeamento entre os campos lógicos que o treinador precisa e as colunas reais
+# da base de dados do garmin-givemydata.
+#
+# O upstream tem cerca de 50 tabelas e os nomes podem mudar entre versões, por
+# isso cada campo aceita vários candidatos: é usado o primeiro que existir.
+# Para ver o esquema real:
+#
+#   docker compose exec garmin garmin-givemydata --status
+#   docker compose exec garmin sqlite3 /data/garmin.db ".schema"
+#
+# Ou correr o descobridor incluído:
+#
+#   docker compose exec garmin python3 /opt/coach/metrics.py --discover
+
+activities:
+  table: [activities, activity]
+  date: [start_time_local, start_time, startTimeLocal, begin_timestamp]
+  sport: [activity_type, activityType, sport, type_key]
+  duration_s: [duration, elapsed_duration, duration_seconds, elapsedDuration]
+  distance_m: [distance, distance_meters]
+  avg_hr: [average_hr, avg_hr, averageHR, average_heart_rate]
+  max_hr: [max_hr, maxHR, max_heart_rate]
+  training_load: [activity_training_load, training_load, trainingLoad, tss]
+  aerobic_te: [aerobic_training_effect, aerobicTrainingEffect]
+  anaerobic_te: [anaerobic_training_effect, anaerobicTrainingEffect]
+
+daily:
+  table: [daily_health, daily_summary, daily_stats, stats]
+  date: [calendar_date, calendarDate, day, date]
+  resting_hr: [resting_heart_rate, restingHeartRate, resting_hr]
+  steps: [total_steps, steps]
+
+sleep:
+  table: [sleep, sleep_data, daily_sleep]
+  date: [calendar_date, calendarDate, day, date]
+  duration_s: [sleep_time_seconds, sleepTimeSeconds, total_sleep_seconds]
+  score: [sleep_score, overall_sleep_score, sleepScore]
+
+hrv:
+  table: [hrv, hrv_data, daily_hrv]
+  date: [calendar_date, calendarDate, day, date]
+  last_night: [last_night_avg, lastNightAvg, weekly_avg, hrv_value]
+  status: [status, hrv_status]
+  baseline_low: [baseline_low_upper, balanced_low, baseline_low]
+  baseline_high: [baseline_balanced_upper, balanced_high, baseline_high]
