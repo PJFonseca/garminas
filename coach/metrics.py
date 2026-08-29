@@ -124,6 +124,8 @@ def load_activities(con, spec, since: date) -> list[dict]:
             "avg_hr": (r["avg_hr"] if "avg_hr" in r.keys() else None),
             "max_hr": (r["max_hr"] if "max_hr" in r.keys() else None),
             "id": (r["id"] if "id" in r.keys() else None),
+            "aerobic_te": (r["aerobic_te"] if "aerobic_te" in r.keys() else None),
+            "anaerobic_te": (r["anaerobic_te"] if "anaerobic_te" in r.keys() else None),
             "load": float(load or 0),
         })
     return sorted(out, key=lambda a: a["date"])
@@ -505,6 +507,8 @@ def sessao_recente(acts: list[dict], ritmos: dict, today: date, ln: str = "en") 
         "load": round(ultima["load"]),
         "notas": notas,
         "max_hr": round(ultima["max_hr"]) if ultima.get("max_hr") else None,
+        "aerobic_te": round(ultima["aerobic_te"], 1) if ultima.get("aerobic_te") else None,
+        "anaerobic_te": round(ultima["anaerobic_te"], 1) if ultima.get("anaerobic_te") else None,
         "id": ultima.get("id"),
     }
 
@@ -549,6 +553,101 @@ def eficiencia(acts: list[dict]) -> dict:
     }
 
 
+def contexto_extra(con, today: date) -> dict:
+    """Tudo o que a Garmin sabe e o relatório ainda não usava.
+
+    Stress, Body Battery, fases do sono e as previsões de tempo de prova. A
+    previsão de 5 km é a que mais interessa a quem tem isso como objetivo, e
+    estava guardada sem nunca ser mostrada.
+    """
+    saida: dict = {}
+
+    def uma(sql, *args):
+        try:
+            return con.execute(sql, args).fetchone()
+        except sqlite3.Error:
+            return None
+
+    r = uma("SELECT calendar_date, avg_stress, max_stress FROM stress"
+            " ORDER BY calendar_date DESC LIMIT 1")
+    if r and r[1] is not None:
+        saida["stress"] = {"date": r[0], "avg": round(r[1]), "max": round(r[2] or 0)}
+
+    r = uma("SELECT calendar_date, highest, lowest, at_wake FROM body_battery"
+            " ORDER BY calendar_date DESC LIMIT 1")
+    if r and r[1] is not None:
+        saida["body_battery"] = {"date": r[0], "high": r[1], "low": r[2], "at_wake": r[3]}
+
+    r = uma("SELECT calendar_date, deep_sleep_seconds, light_sleep_seconds,"
+            " rem_sleep_seconds, awake_sleep_seconds FROM sleep"
+            " ORDER BY calendar_date DESC LIMIT 1")
+    if r and r[1] is not None:
+        saida["sleep_phases"] = {
+            "date": r[0], "deep_min": round((r[1] or 0) / 60),
+            "light_min": round((r[2] or 0) / 60), "rem_min": round((r[3] or 0) / 60),
+            "awake_min": round((r[4] or 0) / 60)}
+
+    r = uma("SELECT calendar_date, time_5k, time_10k, time_half_marathon"
+            " FROM race_predictions WHERE time_5k IS NOT NULL"
+            " ORDER BY calendar_date DESC LIMIT 1")
+    if r:
+        def mmss(s):
+            s = int(s or 0)
+            return f"{s // 60}:{s % 60:02d}"
+        saida["race"] = {"date": r[0], "5k": mmss(r[1]), "10k": mmss(r[2]),
+                         "half": mmss(r[3])}
+    return saida
+
+
+def forma_da_sessao(parciais: list[dict]) -> dict:
+    """Que forma teve a sessão, para não se confundir estrutura com desleixo.
+
+    Um modelo que só vê 8:10, 6:23, 6:31, 6:27, 7:14, 9:15 chama àquilo ritmo
+    inconsistente. Mas o primeiro quilómetro é aquecimento e o último é
+    arrefecimento, e o que está no meio é o treino: aquilo é execução correta.
+    A diferença entre estrutura e desleixo não se vê nos números soltos, vê-se
+    na forma, por isso a forma é classificada aqui e entregue já decidida.
+    """
+    uteis = [p for p in parciais if p.get("pace_seconds") and p["km"] >= 0.4]
+    if len(uteis) < 3:
+        return {}
+
+    ritmos = [p["pace_seconds"] for p in uteis]
+    miolo = ritmos[1:-1]
+    mais_rapido, mais_lento = min(ritmos), max(ritmos)
+    amplitude = (mais_lento - mais_rapido) / mais_rapido
+
+    # Alternância: quantas vezes o ritmo troca de sentido, contando só as
+    # mudanças que valem alguma coisa. Entre 6:23 e 6:31 vão 2%, que é ruído de
+    # passadeira, e contá-las fazia qualquer rodagem passar por séries.
+    minimo = mais_rapido * 0.05
+    def sentido(a, b):
+        return 0 if abs(b - a) < minimo else (1 if b > a else -1)
+    passos = [sentido(ritmos[i - 1], ritmos[i]) for i in range(1, len(ritmos))]
+    reais = [p for p in passos if p]
+    trocas = sum(1 for i in range(1, len(reais)) if reais[i] != reais[i - 1])
+
+    primeiro_lento = ritmos[0] > min(miolo) * 1.10 if miolo else False
+    ultimo_lento = ritmos[-1] > min(miolo) * 1.10 if miolo else False
+
+    if amplitude < 0.06:
+        forma = "even"
+    elif trocas >= max(2, len(ritmos) // 2):
+        forma = "intervals"
+    elif primeiro_lento and ultimo_lento:
+        forma = "warmup_work_cooldown"
+    elif primeiro_lento:
+        forma = "progressive"
+    elif ultimo_lento:
+        forma = "faded"
+    else:
+        forma = "mixed"
+
+    return {"shape": forma, "spread_pct": round(amplitude * 100),
+            "fastest": min(uteis, key=lambda p: p["pace_seconds"])["pace"],
+            "slowest": max(uteis, key=lambda p: p["pace_seconds"])["pace"]}
+
+
 def notas_do_detalhe(s: dict, ln: str) -> dict:
     """Acrescenta às notas o que só os parciais e as zonas sabem.
 
@@ -570,10 +669,17 @@ def notas_do_detalhe(s: dict, ln: str) -> dict:
     if len(inteiros) >= 3:
         rapido = min(inteiros, key=lambda p: p["pace_seconds"])
         ultimo = inteiros[-1]
-        if ultimo["pace_seconds"] > rapido["pace_seconds"] * 1.15:
+        if (s.get("shape", {}).get("shape") not in ("warmup_work_cooldown", "intervals")
+                and ultimo["pace_seconds"] > rapido["pace_seconds"] * 1.15):
             notas.append(_t("s.faded", ln, last=ultimo["pace"], best=rapido["pace"]))
         elif ultimo["pace_seconds"] <= rapido["pace_seconds"] * 1.02:
             notas.append(_t("s.built", ln))
+
+    forma = forma_da_sessao(s.get("splits") or [])
+    if forma:
+        forma["label"] = _t("shape." + forma["shape"], ln)
+        s["shape"] = forma
+        notas.append(forma["label"])
 
     ef = s.get("_efficiency") or {}
     if ef.get("has_data") and abs(ef["pct"]) >= 3:
@@ -661,6 +767,7 @@ def build(con, ln: str = "en") -> dict:
         "body": body(con, spec.get("weight", {"table": []}), today),
         "paces": paces(acts),
         "efficiency": eficiencia(acts),
+        "extra": contexto_extra(con, today),
         "sessao": notas_do_detalhe(
             {**sessao_recente(acts, paces(acts), today, ln),
              **detalhe_sessao(con, (acts[-1].get("id") if acts else None)),

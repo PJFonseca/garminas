@@ -155,6 +155,7 @@ PHASES = {
     "garmin": ("A ligar à Garmin e a puxar o histórico",
                "Connecting to Garmin and pulling the history"),
     "a_atualizar": ("A ir buscar os treinos novos", "Fetching new sessions"),
+    "a_reescrever": ("A reescrever o relatório", "Rewriting the report"),
     "relatório": ("A escrever o relatório", "Writing the report"),
     "pronto": ("Pronto", "Done"),
     "erro": ("Falhou", "Failed"),
@@ -340,6 +341,31 @@ def save_credentials(folder: Path, email: str, password: str) -> None:
     env.chmod(0o600)
 
 
+def rewrite_work(folder: Path) -> None:
+    """Rewrites the report from the data already on disk.
+
+    No sync. Changing a preference or the prompt does not need a round trip to
+    Garmin, and waiting through one to read a differently worded report is
+    time spent for nothing.
+    """
+    try:
+        with job.lock:
+            job.running, job.phase, job.progress = True, "a_reescrever", None
+        if not run_streaming([sys.executable, "/opt/coach/coach.py"],
+                             {"GARMIN_DATA_DIR": str(folder)}):
+            raise RuntimeError("the report failed")
+        with job.lock:
+            job.phase, job.done, job.slug = "pronto", True, folder.name
+        job.say("Done.")
+    except Exception as exc:                     # noqa: BLE001
+        with job.lock:
+            job.error, job.phase = str(exc), "erro"
+        job.say(f"ERROR: {exc}")
+    finally:
+        with job.lock:
+            job.running = False
+
+
 def refresh_work(folder: Path) -> None:
     """Fetches whatever is new and rewrites the report, on demand.
 
@@ -506,7 +532,7 @@ nav a { text-decoration:none; }
 .previous a { display:inline-block; padding:.3rem .7rem; border:1px solid var(--line);
   border-radius:99px; font-size:.85rem; text-decoration:none; font-variant-numeric:tabular-nums; }
 .previous a:hover { border-color:var(--accent); }
-.previous .today_str { border-color:var(--accent); font-weight:600; }
+.previous .hoje { border-color:var(--accent); font-weight:600; }
 
 .people { display:flex; flex-wrap:wrap; gap:1rem; margin:1.5rem 0; }
 .person { display:flex; flex-direction:column; align-items:center; gap:.6rem; width:8.5rem;
@@ -524,6 +550,8 @@ nav { align-items:center; }
 nav b { margin-right:auto; }
 nav form.inline { display:inline; margin:0; }
 button.pequeno { margin:0; padding:.3rem .8rem; font-size:.85rem; border-radius:99px; }
+button.vazio { background:none; color:var(--accent); border:1px solid var(--line); }
+button.vazio:hover { border-color:var(--accent); }
 hr { border:0; border-top:1px solid var(--line); margin:2rem 0; }
 """ + VIZ_CSS
 
@@ -645,6 +673,11 @@ def settings(slug: str):
   <textarea name=style rows=3 placeholder="{escape(_t("ui.style_example", ln))}"
     >{escape(data.get("style") or "")}</textarea>
 
+  <h2>{_t("ui.your_section", ln)}</h2>
+  <p class=note-box>{_t("ui.section_help", ln)}</p>
+  <textarea name=section rows=8 placeholder="{escape(_t("ui.section_example", ln))}"
+    >{escape(data.get("section") or "")}</textarea>
+
   <h2>{_t("ui.your_notes", ln)}</h2>
   <p class=note-box>{_t("ui.notes_help", ln)}</p>
   <textarea name=notes rows=5 placeholder="{escape(_t("ui.notes_example", ln))}"
@@ -654,6 +687,10 @@ def settings(slug: str):
   <select name=language>{opcoes}</select>
 
   <button type=submit>{_t("ui.save", ln)}</button>
+</form>
+
+<form method=post action="/rewrite/{slug}">
+  <button class=vazio type=submit>{_t("ui.rewrite", ln)}</button>
 </form>""")
 
 
@@ -664,8 +701,12 @@ def save_settings(slug: str):
         return redirect("/")
     folder = Path(person["dir"])
     data = profiles.read(folder)
-    data["style"] = request.form.get("style", "").strip()[:1000]
-    data["notes"] = request.form.get("notes", "").strip()[:2000]
+    # Limites largos e iguais aos do formulário. Cortar uma prompt a meio sem
+    # avisar foi o que fiz antes, e o resultado foi alguém a olhar para um
+    # relatório inalterado sem perceber porquê.
+    data["style"] = request.form.get("style", "").strip()[:6000]
+    data["notes"] = request.form.get("notes", "").strip()[:4000]
+    data["section"] = request.form.get("section", "").strip()[:6000]
     data.pop("prompt", None)                 # campo único das versões anteriores
     escolha = request.form.get("language", "").strip()
     data["language_choice"] = escolha
@@ -675,6 +716,18 @@ def save_settings(slug: str):
         data["language"] = pick(data.get("locale"))
     profiles.write(folder, data)
     return redirect(f"/p/{slug}")
+
+
+@app.post("/rewrite/<slug>")
+def rewrite(slug: str):
+    person = next((p for p in profiles.listing() if p["slug"] == slug), None)
+    if not person or not can_view(person):
+        return redirect("/")
+    if not job.snapshot()["running"]:
+        job.reset()
+        threading.Thread(target=rewrite_work, args=(Path(person["dir"]),),
+                         daemon=True).start()
+    return redirect("/progress")
 
 
 @app.post("/refresh/<slug>")
@@ -719,13 +772,16 @@ def report_for(person: dict, day: str | None):
 
     today_str = date.today().isoformat()
     previous = "".join(
-        f'<a class="{"today_str" if d == today_str else ""}" href="/p/{person["slug"]}/{d}">'
-        f'{d}{" (today_str)" if d == today_str else ""}</a>' for d in days_list[:14])
+        f'<a class="{"hoje" if d == today_str else ""}" href="/p/{person["slug"]}/{d}">'
+        f'{d}{f" ({_t(chr(117) + chr(105) + ".today_short", ln)})" if d == today_str else ""}'
+        f'</a>' for d in days_list[:14])
     portrait = (f'<img class=avatar src="/photo/{person["slug"]}" alt="">' if person["photo"] else "")
     sair = f'<a href=/logout>{_t("ui.logout", ln)}</a>' if person["has_password"] else ""
     settings_link = f'<a href="/p/{person["slug"]}/settings">{_t("ui.settings", ln)}</a>'
     update = (f'<form method=post action="/refresh/{person["slug"]}" class=inline>'
-              f'<button class=pequeno type=submit>{_t("ui.update_now", ln)}</button></form>')
+              f'<button class=pequeno type=submit>{_t("ui.update_now", ln)}</button></form>'
+              f'<form method=post action="/rewrite/{person["slug"]}" class=inline>'
+              f'<button class="pequeno vazio" type=submit>{_t("ui.rewrite", ln)}</button></form>')
     return page(f'{person["first"]}, {APP}',
                 f'<nav>{portrait}<b>{escape(person["name"])}</b>'
                 f'{update}{settings_link}<a href="/">{_t("ui.switch", ln)}</a>'

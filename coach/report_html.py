@@ -39,7 +39,7 @@ CSS = """
 .seguir .quando { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
 .seguir h2 { margin:.2rem 0 .1rem; padding:0; border:0; font-size:1.45rem; }
 .seguir .dur { font-size:.95rem; color:var(--dim); }
-.seguir .como { margin:.7rem 0 0; font-size:1rem; max-width:68ch; }
+.seguir .como { margin:.7rem 0 0; font-size:1rem; max-width:74ch; }
 .seguir .ritmo { margin:.6rem 0 0; padding:.6rem .8rem; border-radius:8px; max-width:68ch;
   background:color-mix(in srgb, var(--s1) 12%, transparent); font-size:1rem; font-weight:600; }
 .seguir .porque { margin:.55rem 0 0; font-size:.87rem; color:var(--dim); max-width:68ch; }
@@ -55,7 +55,7 @@ CSS = """
 .correu .rotulo { display:flex; align-items:center; gap:.45rem; font-size:.8rem;
   text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin-bottom:.5rem; }
 .correu .rotulo b { color:var(--s1); font-size:.95rem; }
-.correu p { margin:0; font-size:1.05rem; line-height:1.55; max-width:68ch; }
+.correu p { margin:0; font-size:1.05rem; line-height:1.55; max-width:74ch; }
 .correu .factos { margin-top:.6rem; font-size:.85rem; color:var(--dim); }
 
 /* Parciais e zonas. O comprimento das barras diz o que os números sozinhos
@@ -151,7 +151,12 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
 .painéis { display:grid; grid-template-columns:1fr; gap:1.75rem; align-items:start; }
 @media (min-width:64rem) { .painéis { grid-template-columns:1fr 1fr; gap:2.25rem; } }
 .painel > h2:first-child, .painel > h3:first-child { margin-top:0; }
-.prose, .legend, .callout, .resumo p { max-width:68ch; }
+/* Medida de leitura. Acima de uns 75 caracteres por linha o olho perde a
+   linha seguinte ao voltar à esquerda. Abaixo de 60 parte de mais. O rodapé e
+   as legendas são texto pequeno e aguentam mais. */
+.prose, .callout, .resumo p { max-width:74ch; }
+.legend { max-width:96ch; }
+.prose p, .correu p, .seguir .como { text-wrap:pretty; }
 .prose { border-left:3px solid var(--line); padding:.1rem 0 .1rem 1rem; margin:.75rem 0 1.5rem; }
 .prose p { margin:.4rem 0; }
 .prose ol { margin:.4rem 0; padding-left:1.2rem; }
@@ -452,6 +457,10 @@ def report_html(d: dict) -> str:
 
     # O comentário à sessão que acabou de ser feita. Estava a ser gerado e
     # guardado, e nunca chegava ao ecrã.
+    custom = d.get("custom_section")
+    custom_html = (f'<h2>{_t("ui.section_title", ln)}</h2>{_prose(custom, ln)}'
+                   if custom else "")
+
     correu_html = ""
     sessao = (m.get("sessao") or {})
     comentario = d.get("sessao_comentario")
@@ -509,6 +518,7 @@ def report_html(d: dict) -> str:
 
 <div class=today>{agora}</div>
 {correu_html}
+{custom_html}
 {_seguir(plan["days"][0], hoje, ln)}
 {flags}
 

@@ -73,6 +73,15 @@ def ask_llm(system: str, prompt: str, max_tokens: int = 400,
     try:
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as resp:
             return json.load(resp)["choices"][0]["message"]["content"].strip()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 500:
+            print("o modelo recusou o pedido, quase de certeza por o contexto ser pequeno "
+                  "de mais para o texto pedido. Sobe LLM_CTX no .env e reinicia o serviço llm.",
+                  file=sys.stderr)
+        else:
+            print(f"modelo indisponível (HTTP {exc.code}); secção sai sem comentário",
+                  file=sys.stderr)
+        return None
     except (urllib.error.URLError, KeyError, TimeoutError, OSError) as exc:
         print(f"modelo indisponível ({exc}); secção sai sem comentário", file=sys.stderr)
         return None
@@ -142,9 +151,10 @@ def preferencias() -> dict:
         import profiles
         d = profiles.read(DATA_DIR) or {}
         return {"style": d.get("style") or "",
-                "notes": d.get("notes") or d.get("prompt") or ""}
+                "notes": d.get("notes") or d.get("prompt") or "",
+                "section": d.get("section") or ""}
     except Exception:                            # noqa: BLE001
-        return {"style": "", "notes": ""}
+        return {"style": "", "notes": "", "section": ""}
 
 
 def contexto_pessoal() -> str:
@@ -424,6 +434,7 @@ Comparações já feitas, que não deves refazer:
 {factos}
 
 Veredicto já decidido: {s['veredicto']}
+{contexto_pessoal()}
 
 Write two sentences, speaking to the person. The first says how it went, with
 one concrete comparison from the list. The second says what that means for the
@@ -477,6 +488,101 @@ Write your answer in {LINGUAS_NOME.get(ln, "English")}.""",
                  max_tokens=420, ln=ln)
 
 
+def seccao_livre(m: dict, plan: dict, flags: list[str], ln: str) -> str | None:
+    """A secção que a própria pessoa pediu, com os números todos à frente.
+
+    As outras secções têm forma fixa porque respondem a perguntas fixas. Esta
+    não tem: recebe os factos calculados e a pergunta de quem escreveu, e
+    devolve o que for pedido. As regras duras continuam de pé, e a guarda dos
+    números também: nada disto autoriza inventar dados.
+    """
+    pedido = preferencias()["section"]
+    if not pedido:
+        return None
+
+    s = m.get("sessao") or {}
+    parciais = "\n".join(
+        f"  km {p['n']}: {p['pace']} /km, {p.get('hr') or '?'} bpm, "
+        f"{p.get('cadence') or '?'} spm" for p in (s.get("splits") or []))
+    zonas = "\n".join(
+        f"  Z{z['n']} ({z.get('low') or '?'}+ bpm): {z['seconds'] // 60}m{z['seconds'] % 60:02d}s"
+        for z in (s.get("zones") or []) if z["seconds"])
+    leituras = "\n".join(
+        f"  {f['titulo']}: {f['valor']} {f['unidade']}, {f.get('rotulo') or ''}, {f['leitura']}"
+        for f in assess(m, ln))
+    dias = "\n".join(
+        f"  {d['date']} ({d['weekday']}): {d['name']}"
+        + (f", {d['duration_min']} min" if d["duration_min"] else "")
+        + (f" | {d['ritmo']}" if d.get("ritmo") else "")
+        for d in plan["days"])
+    ef = m.get("efficiency") or {}
+    x = m.get("extra") or {}
+    bem_estar = []
+    if x.get("stress"):
+        bem_estar.append(f"  stress {x['stress']['date']}: average {x['stress']['avg']}, "
+                         f"peak {x['stress']['max']}")
+    if x.get("body_battery"):
+        b = x["body_battery"]
+        bem_estar.append(f"  body battery {b['date']}: {b['at_wake']} on waking, "
+                         f"high {b['high']}, low {b['low']}")
+    if x.get("sleep_phases"):
+        sp = x["sleep_phases"]
+        bem_estar.append(f"  sleep {sp['date']}: {sp['deep_min']} min deep, "
+                         f"{sp['light_min']} light, {sp['rem_min']} REM, {sp['awake_min']} awake")
+    if x.get("race"):
+        r = x["race"]
+        bem_estar.append(f"  Garmin race predictions {r['date']}: 5 km {r['5k']}, "
+                         f"10 km {r['10k']}, half {r['half']}")
+    te = []
+    if s.get("aerobic_te"):
+        te.append(f"aerobic training effect {s['aerobic_te']}")
+    if s.get("anaerobic_te"):
+        te.append(f"anaerobic {s['anaerobic_te']}")
+
+    factos = f"""LAST SESSION
+  {desporto(s.get('sport', ''), ln)}, {s.get('minutes')} min, {s.get('km')} km, \
+{s.get('kmh')} km/h, avg HR {s.get('avg_hr')}, max HR {s.get('max_hr')}, load {s.get('load')}
+  {', '.join(te) if te else 'no training effect recorded'}
+SESSION SHAPE, already worked out. Do not call a deliberate shape
+inconsistency: a slow first and last kilometre are a warm-up and a cool-down.
+  {(s.get('shape') or {}).get('label', 'not enough splits to tell')}
+SPLITS
+{parciais or '  none recorded'}
+HEART RATE ZONES
+{zonas or '  none recorded'}
+READINGS
+{leituras}
+EFFICIENCY (pace at the same heart rate)
+  {ef.get('pct', 'no data')}% over {ef.get('n_recent', 0)} recent sessions \
+against the {ef.get('n_before', 0)} before
+LOAD
+  CTL {m['load']['ctl']}, ATL {m['load']['atl']}, TSB {m['load']['tsb']}, \
+{m['load']['sessions_7d']} sessions and {m['load']['minutes_7d']} minutes in 7 days
+FOUR WEEKS
+""" + "\n".join(
+        f"  week of {w['start']}: {w['sessions']} sessions, {w['minutes']} min, "
+        f"{w['km']} km, load {w['load']}" for w in reversed(m["month"]["weeks"])) + f"""
+WELLBEING AND PREDICTIONS
+{chr(10).join(bem_estar) if bem_estar else "  no data"}
+RECOVERY FLAGS
+  {'; '.join(flags) if flags else 'none'}
+PLAN ALREADY CALCULATED
+{dias}
+"""
+
+    return write(f"""{factos}
+{contexto_pessoal()}
+
+The person asked you for this, in their own words. Answer it using the figures
+above and nothing else. If they ask for something the figures cannot answer,
+say so in one line rather than inventing it. Keep whatever shape they asked
+for.
+
+{pedido.strip()}
+
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", max_tokens=700, ln=ln)
+
+
 def table(header: list[str], rows: list[list]) -> list[str]:
     return ["| " + " | ".join(header) + " |",
             "|" + "|".join("---" for _ in header) + "|"] + \
@@ -497,7 +603,7 @@ def slow_down_rule(rules: dict, ln: str = "en") -> str:
 
 def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
            review: str | None, rules: dict, objetivo: dict | None = None,
-           ln: str = "en") -> str:
+           ln: str = "en", custom: str | None = None) -> str:
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
@@ -582,6 +688,9 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   "O treino ajuda, mas a diferença maior vem da alimentação, que este relatório "
                   "não vê.", ""]
 
+    if custom:
+        lines += [f"## {_t('ui.section_title', ln)}", "", custom, ""]
+
     lines += [f"## {_t('ui.recommendation', ln)}", ""]
     lines += [review or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
               "continha números que não estão nos dados e foi rejeitado. "
@@ -622,12 +731,13 @@ def main() -> None:
                       extras=cfg, ln=ln)
 
     sessao = comentar_sessao(m, ln)
+    livre = seccao_livre(m, plan, flags, ln)
     analysis = analyse_training(m, flags, ln)
     review = review_and_recommend(m, plan, flags, ln)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report = render(m, flags, plan, analysis, review, cfg["recovery_flags"],
-                    cfg.get("objetivo"), ln)
+                    cfg.get("objetivo"), ln, livre)
     stamp = date.today().isoformat()
     (OUT_DIR / f"{stamp}.md").write_text(report)
     (OUT_DIR / "latest.md").write_text(report)
@@ -648,6 +758,7 @@ def main() -> None:
         "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
         "assessment": assess(m, ln),
         "sessao_comentario": sessao,
+        "custom_section": livre,
         "objetivo": cfg.get("objetivo") or {},
     }
     for name in (f"{stamp}.json", "latest.json"):

@@ -369,6 +369,20 @@ F.update({
               "you are {pct}% more efficient than in the sessions before, more speed for the same heart rate"),
     "s.eff_down": ("estás {pct}% menos eficiente do que nas sessões anteriores",
                    "you are {pct}% less efficient than in the sessions before"),
+    "shape.even": ("ritmo constante do princípio ao fim",
+                   "an even pace from start to finish"),
+    "shape.intervals": ("séries: alternaste rápido e lento de propósito",
+                        "intervals: you alternated fast and slow on purpose"),
+    "shape.warmup_work_cooldown": ("aqueceste, trabalhaste, arrefeceste. A variação de ritmo "
+                                   "é a estrutura da sessão, não falta de consistência",
+                                   "warm-up, work, cool-down. The change of pace is the shape "
+                                   "of the session, not a lack of consistency"),
+    "shape.progressive": ("progressivo: começaste devagar e foste a acelerar",
+                          "progressive: you started slow and built through it"),
+    "shape.faded": ("foste a abrandar ao longo da sessão",
+                    "you slowed down as the session went on"),
+    "shape.mixed": ("ritmo irregular, sem estrutura visível",
+                    "uneven pace, with no visible structure"),
     "s.faded": ("abrandaste no fim: o último quilómetro foi {last}, contra {best} no mais rápido",
                 "you faded at the end: the last kilometre was {last}, against {best} at your fastest"),
     "s.built": ("foste a acelerar: o último quilómetro foi o mais rápido",
@@ -378,6 +392,24 @@ F.update({
     "s.z12": ("ficaste quase toda a sessão em zona 1 e 2, {pct}% do tempo",
               "you stayed in zones 1 and 2 for most of it, {pct}% of the time"),
     "ui.settings": ("Preferências", "Preferences"),
+    "ui.rewrite": ("Reescrever", "Rewrite"),
+    "ui.rewriting": ("A reescrever o relatório", "Rewriting the report"),
+    "ui.your_section": ("A tua secção", "Your own section"),
+    "ui.section_help": ("Escreve aqui o que queres que o treinador te diga, por tuas palavras. "
+                        "Recebe todos os números do relatório e responde ao que pedires, no "
+                        "formato que pedires. Sai como uma secção à parte, no fim. As outras "
+                        "secções não mudam, e continua a não poder inventar números.",
+                        "Write here what you want the coach to tell you, in your own words. It "
+                        "receives every figure in the report and answers what you ask, in the "
+                        "shape you ask for. It comes out as a section of its own, at the end. "
+                        "The other sections do not change, and it still cannot invent numbers."),
+    "ui.section_example": ("Por exemplo: analisa o último treino volta a volta, diz-me se o "
+                           "aquecimento chegou, e dá-me três coisas a corrigir para a semana.",
+                           "For example: analyse the last session lap by lap, tell me whether "
+                           "the warm-up was enough, and give me three things to fix this week."),
+    "ui.section_title": ("A tua análise", "Your analysis"),
+    "ui.too_long": ("Demasiado longo, foi cortado nos {n} caracteres.",
+                    "Too long, cut at {n} characters."),
     "ui.your_style": ("Como queres que o treinador te fale",
                       "How you want the coach to talk to you"),
     "ui.style_help": ("Instruções ao modelo sobre o tom e a forma. Vai junto às regras de "
