@@ -188,6 +188,43 @@ F = {
 }
 
 
+# ── veredictos e frases longas do relatório ─────────────────────────────────
+F.update({
+    "v.ramp.sem": ("sem semanas anteriores suficientes para comparar",
+                   "not enough previous weeks to compare against"),
+    "v.ramp.alerta": ("{r}, acima de 1.3: subida rápida de mais, território de lesão",
+                      "{r}, above 1.3: rising too fast, injury territory"),
+    "v.ramp.leve": ("{r}, abaixo de 0.8: a semana passada ficou aquém, está a perder forma",
+                    "{r}, below 0.8: last week fell short, you are losing fitness"),
+    "v.ramp.bom": ("{r}, entre 0.8 e 1.3: progressão saudável",
+                   "{r}, between 0.8 and 1.3: a healthy ramp"),
+    "v.abrandar": ("Abranda o plano se acontecer alguma destas coisas: a FC de repouso a 7 dias "
+                   "subir mais de {rhr} bpm acima da base de 28 dias, o HRV cair mais de {hrv}% "
+                   "abaixo da base, o sono a 7 dias descer abaixo de {sono} h, ou o TSB passar "
+                   "abaixo de {tsb}. Se alguma acontecer, o relatório do dia seguinte passa a "
+                   "sugerir apenas sessões leves. Dor, tonturas ou sono partido valem por si, "
+                   "sem esperar por números.",
+                   "Ease off the plan if any of these happens: your 7-day resting heart rate "
+                   "rises more than {rhr} bpm above the 28-day baseline, HRV drops more than "
+                   "{hrv}% below baseline, 7-day sleep falls below {sono} h, or TSB goes below "
+                   "{tsb}. If one of them does, the next day's report will suggest easy sessions "
+                   "only. Pain, dizziness or broken sleep count on their own, without waiting "
+                   "for numbers."),
+    "md.estado": ("Estado", "Status"),
+    "md.a_seguir": ("A seguir: {quando}, {data}", "Next up: {quando}, {data}"),
+    "md.porque": ("Porquê esta: {motivo}.", "Why this one: {motivo}."),
+    "md.atl": ("ATL (fadiga recente) {atl}, {n} sessões nos últimos 7 dias.",
+               "ATL (recent fatigue) {atl}, {n} sessions in the last 7 days."),
+    "md.ja_treinaste": ("Já treinaste: **{desporto}**, {min} min{km}, carga {carga}. "
+                        "O plano abaixo começa amanhã.",
+                        "You already trained: **{desporto}**, {min} min{km}, load {carga}. "
+                        "The plan below starts tomorrow."),
+    "md.leitura": ("Leitura", "Reading"), "md.porque_col": ("Porquê", "Why"),
+    "md.metrica": ("Métrica", "Metric"), "md.valor": ("Valor", "Value"),
+    "md.dia": ("Dia", "Day"), "md.sessao": ("Sessão", "Session"),
+    "md.tsb_proj": ("TSB projetado", "Projected TSB"),
+})
+
 # ── interface do relatório ──────────────────────────────────────────────────
 F.update({
     "ui.treino": ("Treino", "Training"),

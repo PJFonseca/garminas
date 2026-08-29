@@ -33,6 +33,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from setup import CATALOGUE, META, TARGET, human  # noqa: E402
 from setup import download as download_model  # noqa: E402
 import perfis  # noqa: E402
+from idioma import APP, escolher, linguas  # noqa: E402
+from idioma import t as _t  # noqa: E402
 from report_html import CSS as VIZ_CSS, report_html  # noqa: E402
 
 DATA = Path(os.environ.get("GARMIN_DATA_DIR_ROOT", "/data"))
@@ -60,8 +62,18 @@ YEAR = re.compile(r"Year\s+(\d+)\s*/\s*(\d+)")
 INNER = [
     (re.compile(r"Days\s+\d+\s*-\s*(\d+)\s*/\s*(\d+)"), "dia {a} de {b}"),
     (re.compile(r"Chunk\s+(\d+)\s*/\s*(\d+)"), "bloco {a} de {b}"),
-    (re.compile(r"(\d+)\s*/\s*(\d+)\s+downloaded"), "ficheiro {a} de {b}"),
 ]
+
+# Depois dos anos de dados vem a descarga dos ficheiros FIT, que pode ser a
+# parte mais demorada de todas. É uma segunda fase, não a continuação da
+# primeira: tratá-las como uma só punha a barra nos 100% com setecentos
+# ficheiros ainda por descarregar.
+FICHEIROS = re.compile(r"(\d+)\s*/\s*(\d+)\s+downloaded")
+COMECOU_FICHEIROS = re.compile(r"Downloading\s+FIT\s+files\s*\((\d+)", re.I)
+
+# Quanto da barra cabe a cada fase. Os anos são o grosso do tempo; os
+# ficheiros, com ligação decente, andam depressa.
+PESO_ANOS = 0.85
 FINISHED = re.compile(r"\[\s*100%\s*\]\s*Done")
 
 
@@ -72,16 +84,34 @@ class SyncProgress:
         self.year, self.years = 1, 1
         self.pct = 0.0
         self.step: str | None = None
+        self.fase = "anos"
 
     def feed(self, line: str) -> None:
+        if COMECOU_FICHEIROS.search(line):
+            self.fase = "ficheiros"
+            self._set(PESO_ANOS, "a descarregar ficheiros de treino")
+            return
+
+        found = FICHEIROS.search(line)
+        if found:
+            self.fase = "ficheiros"
+            a, b = int(found.group(1)), max(1, int(found.group(2)))
+            self._set(PESO_ANOS + (1 - PESO_ANOS) * min(1.0, a / b),
+                      f"ficheiro {a} de {b}")
+            return
+
+        if self.fase == "ficheiros":
+            return                    # os contadores dos anos já não se aplicam
+
         found = YEAR.search(line)
         if found:
             self.year, self.years = int(found.group(1)), max(1, int(found.group(2)))
-            self._set((self.year - 1) / self.years, f"ano {self.year} de {self.years}")
+            self._set((self.year - 1) / self.years * PESO_ANOS,
+                      f"ano {self.year} de {self.years}")
             return
 
         if FINISHED.search(line):
-            self._set(1.0, None)
+            self._set(PESO_ANOS, None)
             return
 
         for pattern, shape in INNER:
@@ -90,7 +120,7 @@ class SyncProgress:
                 a, b = int(found.group(1)), max(1, int(found.group(2)))
                 inner = min(1.0, a / b)
                 banda = f"ano {self.year} de {self.years} · " if self.years > 1 else ""
-                self._set((self.year - 1 + inner) / self.years,
+                self._set((self.year - 1 + inner) / self.years * PESO_ANOS,
                           banda + shape.format(a=a, b=b))
                 return
 
@@ -120,6 +150,16 @@ if not _chave.exists():
     _chave.write_bytes(os.urandom(32))
     _chave.chmod(0o600)
 app.secret_key = _chave.read_bytes()
+
+
+def lingua() -> str:
+    """Antes de existir um perfil não há conta para consultar, por isso vale o
+    que o browser pede. Depois de existir, manda o perfil."""
+    try:
+        preferida = request.accept_languages.best_match(linguas())
+    except RuntimeError:                      # fora de um pedido
+        preferida = None
+    return escolher(preferida)
 
 
 def desbloqueados() -> set:
@@ -459,11 +499,13 @@ def home():
             f'<a class=pessoa href="/p/{pessoa["slug"]}">{retrato}'
             f'<span class=nome>{escape(pessoa["primeiro"])}{cadeado}</span></a>')
 
-    cartoes.append('<a class="pessoa nova" href="/novo">'
-                   '<span class=iniciais>+</span><span class=nome>Adicionar</span></a>')
-    return page("garmin-nas", f"""
-<h1>Quem vai treinar?</h1>
-<p class=sub>Cada pessoa tem a sua conta Garmin e o seu relatório.</p>
+    ln = lingua()
+    cartoes.append(f'<a class="pessoa nova" href="/novo">'
+                   f'<span class=iniciais>+</span>'
+                   f'<span class=nome>{_t("ui.adicionar", ln)}</span></a>')
+    return page(APP, f"""
+<h1>{_t("ui.quem", ln)}</h1>
+<p class=sub>{_t("ui.quem_sub", ln)}</p>
 <div class=gente>{"".join(cartoes)}</div>""")
 
 
@@ -482,9 +524,10 @@ def perfil(slug: str, day: str | None = None):
     pessoa = next((p for p in perfis.listar() if p["slug"] == slug), None)
     if not pessoa:
         return redirect("/")
+    ln = escolher(pessoa.get("idioma"))
     if not pode_ver(pessoa):
-        return page(f'{pessoa["primeiro"]} — garmin-nas', f"""
-<nav><a href="/">Voltar</a></nav>
+        return page(f'{pessoa["primeiro"]}, {APP}', f"""
+<nav><a href="/">{_t("ui.voltar", ln)}</a></nav>
 <h1>{escape(pessoa["primeiro"])}</h1>
 <p class=sub>Este perfil está protegido.</p>
 <form method=post action="/entrar/{slug}">
@@ -512,13 +555,14 @@ def sair():
 
 
 def relatorio_de(pessoa: dict, day: str | None):
+    ln = escolher(pessoa.get("idioma"))
     pasta = Path(pessoa["dir"])
     reports = pasta / "reports"
     if not reports.exists():
-        return page("garmin-nas", f'<nav><a href="/">Voltar</a></nav>'
-                    f'<h1>Ainda não há relatórios</h1>'
-                    f'<p class=sub>A primeira sincronização de {escape(pessoa["primeiro"])} '
-                    f'ainda não correu.</p>')
+        return page(APP, f'<nav><a href="/">{_t("ui.voltar", ln)}</a></nav>'
+                    f'<h1>{_t("ui.sem_relatorios", ln)}</h1>'
+                    f'<p class=sub>{_t("ui.sem_relatorios_sub", ln, nome=escape(pessoa["primeiro"]))}'
+                    f'</p>')
 
     dias = sorted((f.stem for f in reports.glob("*.md") if f.stem != "latest"), reverse=True)
     stem = day or "latest"
@@ -537,12 +581,13 @@ def relatorio_de(pessoa: dict, day: str | None):
         f'<a class="{"hoje" if d == hoje else ""}" href="/p/{pessoa["slug"]}/{d}">'
         f'{d}{" (hoje)" if d == hoje else ""}</a>' for d in dias[:14])
     retrato = (f'<img class=avatar src="/foto/{pessoa["slug"]}" alt="">' if pessoa["foto"] else "")
-    return page(f'{pessoa["primeiro"]} — garmin-nas',
+    sair = f'<a href=/sair>{_t("ui.sair", ln)}</a>' if pessoa["tem_senha"] else ""
+    return page(f'{pessoa["primeiro"]}, {APP}',
                 f'<nav>{retrato}<b>{escape(pessoa["nome"])}</b>'
-                f'<a href="/">Trocar de perfil</a><a href="/novo">Adicionar perfil</a>'
-                f'{"<a href=/sair>Sair</a>" if pessoa["tem_senha"] else ""}</nav>{corpo}'
-                f'<hr><h3>Relatórios anteriores</h3>'
-                f'<div class=anteriores>{anteriores or "<span class=legend>nenhum</span>"}</div>',
+                f'<a href="/">{_t("ui.trocar", ln)}</a>'
+                f'<a href="/novo">{_t("ui.adicionar", ln)}</a>{sair}</nav>{corpo}'
+                f'<hr><h3>{_t("ui.anteriores", ln)}</h3>'
+                f'<div class=anteriores>{anteriores or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',
                 MODAL_JS, wide=True)
 
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from html import escape
 
+from idioma import t as _t
+
 # Cada figura desenha duas posições, a de partida e a de chegada, porque um
 # exercício é um movimento e uma pose só conta metade.
 FIGURAS: dict[str, str] = {
@@ -67,6 +69,14 @@ CSS = """
 """
 
 
+def _texto(item: dict, campo: str, ln: str) -> str:
+    """Aceita texto simples ou um dicionário por língua, com recurso a inglês."""
+    valor = item.get(campo, "")
+    if isinstance(valor, dict):
+        return valor.get(ln) or valor.get("en") or next(iter(valor.values()), "")
+    return valor
+
+
 def figura(nome: str) -> str:
     corpo = FIGURAS.get(nome)
     if not corpo:
@@ -74,14 +84,14 @@ def figura(nome: str) -> str:
     return f'<svg class=fig viewBox="0 0 92 66" role=img aria-label="{escape(nome)}">{corpo}</svg>'
 
 
-def exercicios(lista: list[dict]) -> str:
+def exercicios(lista: list[dict], ln: str = "en") -> str:
     if not lista:
         return ""
     cartoes = "".join(
         f'<div class=ex>{figura(e.get("figura", ""))}'
-        f'<div class=nome>{escape(e["nome"])}</div>'
-        f'<div class=series>{escape(e.get("series", ""))}</div>'
-        f'<div class=dica>{escape(e.get("dica", ""))}</div></div>'
+        f'<div class=nome>{escape(_texto(e, "nome", ln))}</div>'
+        f'<div class=series>{escape(_texto(e, "series", ln))}</div>'
+        f'<div class=dica>{escape(_texto(e, "dica", ln))}</div></div>'
         for e in lista)
     return f'<div class=exs>{cartoes}</div>'
 
@@ -98,7 +108,7 @@ def expandir(estrutura: list) -> list[dict]:
     return saida
 
 
-def linha_tempo(estrutura: list) -> str:
+def linha_tempo(estrutura: list, ln: str = "en") -> str:
     """A sessão vista de lado, do aquecimento ao arrefecimento."""
     passos = expandir(estrutura)
     if not passos:
@@ -106,14 +116,13 @@ def linha_tempo(estrutura: list) -> str:
     total = sum(float(p["min"]) for p in passos) or 1
     barras = "".join(
         f'<i class="t-{p["tipo"]}" style="width:{float(p["min"]) / total * 100:.2f}%" '
-        f'title="{escape(p.get("nome", ""))}, {p["min"]} min"></i>'
+        f'title="{escape(_texto(p, "nome", ln))}, {p["min"]} min"></i>'
         for p in passos)
     usados = []
     for p in passos:
         if p["tipo"] not in usados:
             usados.append(p["tipo"])
-    nomes = {"facil": "fácil", "forte": "forte", "andar": "a andar"}
-    legenda = "".join(f'<span class=l-{u}>{nomes.get(u, u)}</span>' for u in usados)
+    legenda = "".join(f'<span class=l-{u}>{_t("tl." + u, ln)}</span>' for u in usados)
     return (f'<div class=tl>{barras}</div>'
             f'<div class=tl-leg>{legenda}<span style="margin-left:auto">'
-            f'{round(total)} min ao todo</span></div>')
+            f'{_t("tl.total", ln, n=round(total))}</span></div>')

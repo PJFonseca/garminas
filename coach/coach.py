@@ -31,6 +31,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))
 from metrics import build, connect  # noqa: E402
 from assess import ESTADOS, assess, desporto  # noqa: E402
+from idioma import APP, escolher  # noqa: E402
+from idioma import t as _t  # noqa: E402
 from plan import build_plan, eligible  # noqa: E402
 
 CATALOGUE = Path(__file__).with_name("workouts.yaml")
@@ -79,6 +81,27 @@ def ask_llm(system: str, prompt: str, max_tokens: int = 400,
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s*")
 
+LINGUAS_NOME = {
+    "en": "English", "pt": "European Portuguese (Portugal, not Brazil)",
+    "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+    "zh": "Simplified Chinese",
+}
+
+SYSTEM_EN = """You are a concise, honest coach. You write in {lingua}, without
+manufactured enthusiasm.
+
+Register:
+- You speak to the person, not about them. Second person.
+- Short sentences, twenty words at most.
+- Say what to do. Never "you might consider" or "it would be advisable".
+- No filler: "it is essential", "it is fundamental", "requires attention", "in
+  order to". Cut it and get to the point.
+- Never use em dashes. Use a comma, a colon or parentheses instead.
+- One number is enough to carry a sentence. Do not introduce it with "as
+  demonstrated by the value of".
+- You never do arithmetic: you quote only the numbers you are given, exactly as
+  they appear."""
+
 SYSTEM = """És um treinador conciso e honesto. Escreves em português europeu de
 Portugal, sem entusiasmo artificial.
 
@@ -102,6 +125,19 @@ Registo:
   a", "no sentido de", "com o objetivo de". Corta e vai direto.
 - Um número chega para sustentar uma frase. Não precisas de o apresentar com
   "como demonstra o valor de"."""
+
+
+def sistema(ln: str) -> str:
+    """As regras de estilo.
+
+    As de português são as únicas escritas na própria língua, porque tratam de
+    coisas que só existem em português: o gerúndio contínuo e a colocação do
+    pronome. Para as outras línguas as regras vão em inglês, que é o que os
+    modelos seguem melhor, com a língua de resposta indicada.
+    """
+    if ln == "pt":
+        return SYSTEM
+    return SYSTEM_EN.format(lingua=LINGUAS_NOME.get(ln, "English"))
 
 # Fórmulas de relatório. Todas têm uma versão direta, e um treinador usa a
 # direta: "dorme mais" em vez de "é fundamental melhorar a higiene do sono".
@@ -175,8 +211,18 @@ def aportuguesar(texto: str) -> str:
     return padrao.sub(troca, texto)
 
 
-def portugues_europeu(texto: str) -> tuple[bool, str]:
-    """Rejeita o que soa a tradução. Devolve o motivo, para o registo."""
+def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
+    """Rejeita o que soa a tradução. Devolve o motivo, para o registo.
+
+    Travessões e fórmulas de relatório valem para qualquer língua. Os gerúndios
+    e o pronome antes do verbo são defeitos do português, e correr essas
+    verificações sobre italiano ou espanhol daria falsos positivos a torto e a
+    direito.
+    """
+    if "—" in texto or "–" in texto:
+        return False, "travessão"
+    if ln != "pt":
+        return True, ""
     if GERUNDIO_CONTINUO.search(texto):
         return False, "construção 'estar + gerúndio'"
     for padrao in (CLITICO_BRASILEIRO, REFLEXO_BRASILEIRO):
@@ -186,8 +232,6 @@ def portugues_europeu(texto: str) -> tuple[bool, str]:
     gerundios = [g for g in GERUNDIO.findall(texto) if g.lower() not in NAO_GERUNDIO]
     if gerundios:
         return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
-    if "—" in texto or "–" in texto:
-        return False, "travessão"
     achados = [c for c in CLICHES if c in texto.lower()]
     if achados:
         return False, "fórmula de relatório: " + ", ".join(achados)
@@ -207,7 +251,7 @@ def _numbers(text: str) -> set[str]:
     return out
 
 
-def write(prompt: str, max_tokens: int = 400) -> str | None:
+def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
     """Gera, verifica os números, e insiste uma vez.
 
     Um 4B conta mal: ao ver dez sessões pede-se-lhe uma leitura e ele responde
@@ -220,7 +264,7 @@ def write(prompt: str, max_tokens: int = 400) -> str | None:
     reforco = ""
     melhor = None
     for attempt in (1, 2, 3):
-        text = ask_llm(SYSTEM, prompt + reforco, max_tokens,
+        text = ask_llm(sistema(ln), prompt + reforco, max_tokens,
                        temperature=0.2 + 0.2 * (attempt - 1))
         if text is None:
             return None
@@ -232,8 +276,9 @@ def write(prompt: str, max_tokens: int = 400) -> str | None:
             reforco = STRICTER
             continue
 
-        text = aportuguesar(text)
-        ok, motivo = portugues_europeu(text)
+        if ln == "pt":
+            text = aportuguesar(text)
+        ok, motivo = portugues_europeu(text, ln)
         if ok:
             return text
         print(f"tentativa {attempt}: não é português europeu ({motivo})", file=sys.stderr)
@@ -246,7 +291,7 @@ def write(prompt: str, max_tokens: int = 400) -> str | None:
     return melhor
 
 
-def ramp_verdict(ramp) -> str:
+def ramp_verdict(ramp, ln: str = "en") -> str:
     """Diz o que a progressão significa, em vez de deixar o modelo comparar.
 
     Entregue apenas o número e a regra, o modelo escreveu que 0.65 estava
@@ -254,12 +299,12 @@ def ramp_verdict(ramp) -> str:
     conclusão oposta ao que os seus próprios dados diziam.
     """
     if ramp is None:
-        return "sem semanas anteriores suficientes para comparar"
+        return _t("v.ramp.sem", ln)
     if ramp > 1.3:
-        return f"{ramp}, acima de 1.3: subida rápida de mais, território de lesão"
+        return _t("v.ramp.alerta", ln, r=ramp)
     if ramp < 0.8:
-        return f"{ramp}, abaixo de 0.8: a semana passada ficou aquém, está a perder forma"
-    return f"{ramp}, entre 0.8 e 1.3: progressão saudável"
+        return _t("v.ramp.leve", ln, r=ramp)
+    return _t("v.ramp.bom", ln, r=ramp)
 
 
 def describe(label: str, now, base, unit: str = "") -> str:
@@ -280,7 +325,7 @@ def describe(label: str, now, base, unit: str = "") -> str:
     return f"{label} {now}{unit}, base de 28 dias {base}{unit}, {word}"
 
 
-def analyse_training(m: dict, flags: list[str]) -> str | None:
+def analyse_training(m: dict, flags: list[str], ln: str = "en") -> str | None:
     """Primeira chamada: pôr por palavras as leituras já calculadas.
 
     O modelo não interpreta nada. Deu-se-lhe uma vez os números crus e ele
@@ -293,14 +338,14 @@ def analyse_training(m: dict, flags: list[str]) -> str | None:
     def uma(f: dict) -> str:
         linha = (f"- {f['titulo']}: {f['valor']}"
                  f"{' ' + f['unidade'] if f['unidade'] else ''}, "
-                 f"{ESTADOS[f['estado']][2]}, {f['leitura']}")
+                 f"{f.get('rotulo') or ''}, {f['leitura']}")
         if f.get("alvo"):
             linha += f". Onde devia estar: {f['alvo']}"
         if f.get("acao"):
             linha += f". O que fazer: {f['acao']}"
         return linha
 
-    leituras = "\n".join(uma(f) for f in assess(m))
+    leituras = "\n".join(uma(f) for f in assess(m, ln))
 
     return write(f"""Leituras já feitas, com o veredicto de cada uma. Não as
 reinterpretes nem tires conclusões novas: o teu trabalho é escrevê-las de forma
@@ -312,20 +357,21 @@ Contexto: nos últimos 14 dias foram {w14['sessions']} sessões, {w14['minutes']
 ao todo e {w14['rest_days']} dias sem treino.
 Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
 
-Escreve duas frases, em português europeu, sem numerar nem fazer lista.
+Write two sentences. No numbering, no list.
 
-Não enumeres as métricas uma a uma: elas já estão à vista na mesma página, e
-repeti-las não acrescenta nada. Diz antes o que o conjunto significa: qual é a
-única coisa que mais limita este treino neste momento, e o que muda se ela for
-tratada.
+Do not walk through the metrics one by one: they are already on the same page,
+and repeating them adds nothing. Say what the set of them means: the single
+thing most limiting this training right now, and what changes if it is dealt
+with.
 
-Máximo 60 palavras. Usa no máximo dois números, copiados da lista. Atenção: o
-valor atual de uma métrica não é a meta. Se disseres a alguém quanto deve
-dormir, usa o número que está em "onde devia estar", nunca o que ela dorme
-agora.""")
+At most 60 words. Use at most two numbers, copied from the list. Careful: a
+metric's current value is not its target. If you tell someone how much to
+sleep, use the number under "where it should be", never what they sleep now.
+
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", ln=ln)
 
 
-def comentar_sessao(m: dict) -> str | None:
+def comentar_sessao(m: dict, ln: str = "en") -> str | None:
     """Duas frases sobre o treino que acabou de ser feito.
 
     As comparações vêm feitas do metrics.py. Ao modelo cabe juntá-las numa
@@ -337,7 +383,7 @@ def comentar_sessao(m: dict) -> str | None:
 
     factos = "\n".join(f"- {n}" for n in s["notas"])
     return write(f"""Acabaste de registar esta sessão:
-{desporto(s['sport'])}, {s['minutes']} minutos, {s['km']} km\
+{desporto(s['sport'], ln)}, {s['minutes']} minutos, {s['km']} km\
 {f", {s['kmh']} km/h" if s.get('kmh') else ''}\
 {f", FC média {s['avg_hr']}" if s.get('avg_hr') else ''}, carga {s['load']}.
 
@@ -346,15 +392,17 @@ Comparações já feitas, que não deves refazer:
 
 Veredicto já decidido: {s['veredicto']}
 
-Escreve duas frases, em português europeu, a falar com a pessoa. A primeira diz
-como correu, com uma comparação concreta da lista. A segunda diz o que isso
-significa para os próximos dias.
+Write two sentences, speaking to the person. The first says how it went, with
+one concrete comparison from the list. The second says what that means for the
+next few days.
 
-Máximo 45 palavras. Não inventes números nem comparações fora da lista.""",
-                 max_tokens=220)
+At most 45 words. Do not invent numbers or comparisons outside the list.
+
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""",
+                 max_tokens=220, ln=ln)
 
 
-def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
+def review_and_recommend(m: dict, plan: dict, flags: list[str], ln: str = "en") -> str | None:
     """Segunda chamada: 30 dias e justificação do plano já calculado."""
     month = m["month"]
     weeks = "\n".join(
@@ -383,14 +431,16 @@ Dias do plano com sessão dura: {', '.join(hard_days) if hard_days else 'nenhum'
 Dias do plano sem treino: {', '.join(rest_days) if rest_days else 'nenhum'}.
 No total: {s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos.
 
-Escreve, em português europeu, sem numerar:
-Um parágrafo a explicar a lógica deste plano: porque estão as sessões duras
-onde estão, e para que servem os dias sem treino.
-Depois uma frase sobre o que vigiar durante as sessões.
+Write, without numbering:
+One paragraph explaining the logic of this plan: why the hard sessions sit
+where they sit, and what the days without training are for.
+Then one sentence on what to watch during the sessions.
 
-Máximo 90 palavras. Não avalies a forma nem a progressão: isso já está dito
-noutro sítio do relatório. Não menciones dias nem sessões fora das listas.""",
-                 max_tokens=420)
+At most 90 words. Do not judge fitness or progression: that is said elsewhere
+in the report. Do not mention days or sessions outside the lists.
+
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""",
+                 max_tokens=420, ln=ln)
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
@@ -399,59 +449,58 @@ def table(header: list[str], rows: list[list]) -> list[str]:
            ["| " + " | ".join("" if c is None else str(c) for c in r) + " |" for r in rows]
 
 
-def slow_down_rule(rules: dict) -> str:
+def slow_down_rule(rules: dict, ln: str = "en") -> str:
     """A regra de travagem sai dos limiares, não do modelo.
 
     Pedida ao modelo, a resposta saía circular — numa execução, 'o sinal para
     abrandar é a ausência de bandeiras de recuperação'. Os números estão no
     workouts.yaml e não têm de ser adivinhados.
     """
-    return (f"Abranda o plano se acontecer alguma destas coisas: a FC de repouso a "
-            f"7 dias subir mais de {rules['rhr_delta_above']} bpm acima da base de 28 "
-            f"dias, o HRV cair mais de {abs(rules['hrv_drop_pct_below'])}% abaixo da "
-            f"base, o sono a 7 dias descer abaixo de {rules['sleep_h_below']} h, ou o "
-            f"TSB passar abaixo de {rules['tsb_below']}. Se alguma acontecer, o "
-            f"relatório do dia seguinte passa a sugerir apenas sessões leves. Dor, "
-            f"tonturas ou sono partido valem por si, sem esperar por números.")
+    return _t("v.abrandar", ln, rhr=rules["rhr_delta_above"],
+              hrv=abs(rules["hrv_drop_pct_below"]), sono=rules["sleep_h_below"],
+              tsb=rules["tsb_below"])
 
 
 def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
-           review: str | None, rules: dict, objetivo: dict | None = None) -> str:
+           review: str | None, rules: dict, objetivo: dict | None = None,
+           ln: str = "en") -> str:
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
-    lines = [f"# Treino, {m['generated']}", ""]
+    lines = [f"# {_t('ui.treino', ln)}, {m['generated']}", ""]
 
-    lines += ["## Estado", ""]
-    lines += table(["Métrica", "Valor", "Leitura", "Porquê"],
+    lines += [f"## {_t('md.estado', ln)}", ""]
+    lines += table([_t("md.metrica", ln), _t("md.valor", ln),
+                    _t("md.leitura", ln), _t("md.porque_col", ln)],
                    [[f["titulo"], f"{f['valor']} {f['unidade']}".strip(),
-                     ESTADOS[f["estado"]][2], f["leitura"]]
-                    for f in assess(m)])
-    lines += ["", f"ATL (fadiga recente) {load['atl']}, "
-                  f"{load['sessions_7d']} sessões nos últimos 7 dias.", ""]
+                     f.get("rotulo") or "", f["leitura"]]
+                    for f in assess(m, ln)])
+    lines += ["", _t("md.atl", ln, atl=load["atl"], n=load["sessions_7d"]), ""]
 
     if flags:
         lines += ["## Bandeiras de recuperação", ""]
         lines += [f"- {f}" for f in flags]
         lines += ["", "Enquanto durarem, só ficam elegíveis sessões de recuperação.", ""]
 
-    lines += ["## Treinos recentes", ""]
+    lines += [f"## {_t('ui.recentes', ln)}", ""]
     if m["recent"]:
-        lines += table(["Data", "Desporto", "Min", "km", "FC média", "Carga"],
-                       [[s["date"], desporto(s["sport"]), s["minutes"], s["km"] or None,
+        lines += table([_t("th.data", ln), _t("th.desporto", ln), _t("th.min", ln),
+                        _t("th.km", ln), _t("th.fc", ln), _t("th.carga", ln)],
+                       [[s["date"], desporto(s["sport"], ln), s["minutes"], s["km"] or None,
                          s["avg_hr"], s["load"]] for s in m["recent"]])
     else:
         lines += ["Sem sessões registadas."]
     lines += [""]
 
-    lines += ["## Análise", ""]
+    lines += [f"## {_t('ui.analise', ln)}", ""]
     lines += [analysis or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
               "continha números que não estão nos dados e foi rejeitado. "
               "Os números e o plano acima são calculados e mantêm-se válidos._"]
     lines += [""]
 
-    lines += ["## Últimos 30 dias", ""]
-    lines += table(["Semana de", "Sessões", "Minutos", "km", "Carga"],
+    lines += [f"## {_t('ui.carga_semana', ln)}", ""]
+    lines += table([_t("th.semana", ln), _t("th.sessoes", ln), _t("th.minutos", ln),
+                    _t("th.km", ln), _t("th.carga", ln)],
                    [[w["start"], w["sessions"], w["minutes"], w["km"], w["load"]]
                     for w in reversed(month["weeks"])])
     duras = month["hard_sessions"]
@@ -462,8 +511,9 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
 
     feito_hoje = next((s for s in m["recent"] if s["date"] == m["generated"]), None)
     seguinte = plan["days"][0]
-    quando = "Hoje" if seguinte["date"] == m["generated"] else f"Amanhã, {seguinte['weekday']}"
-    lines += [f"## A seguir: {quando}, {seguinte['date']}", "",
+    quando = (_t("ui.hoje", ln) if seguinte["date"] == m["generated"]
+              else f"{_t('ui.amanha', ln)}, {seguinte['weekday']}")
+    lines += [f"## {_t('md.a_seguir', ln, quando=quando, data=seguinte['date'])}", "",
               f"**{seguinte['name']}**"
               + (f", {seguinte['duration_min']} min" if seguinte["duration_min"] else "") + "", ""]
     if seguinte.get("ritmo"):
@@ -471,20 +521,22 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     if seguinte.get("description"):
         lines += [seguinte["description"], ""]
     if seguinte.get("motivo"):
-        lines += [f"Porquê esta: {seguinte['motivo']}.", ""]
+        lines += [_t("md.porque", ln, motivo=seguinte["motivo"]), ""]
 
-    lines += ["## Hoje", ""]
+    lines += [f"## {_t('ui.hoje', ln)}", ""]
     if feito_hoje:
-        lines += [f"Já treinaste: **{desporto(feito_hoje['sport'])}**, {feito_hoje['minutes']} min"
-                  + (f", {feito_hoje['km']} km" if feito_hoje["km"] else "")
-                  + f", carga {feito_hoje['load']}. O plano abaixo começa amanhã.", ""]
+        lines += [_t("md.ja_treinaste", ln, desporto=desporto(feito_hoje["sport"], ln),
+                     min=feito_hoje["minutes"],
+                     km=f", {feito_hoje['km']} km" if feito_hoje["km"] else "",
+                     carga=feito_hoje["load"]), ""]
     else:
         lines += [f"**{today['name']}**"
                   + (f", {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
 
     s = plan["summary"]
-    lines += [f"## Plano para os próximos {len(plan['days'])} dias", ""]
-    lines += table(["Data", "Dia", "Sessão", "Min", "TSB projetado"],
+    lines += [f"## {_t('ui.plano', ln, n=len(plan['days']))}", ""]
+    lines += table([_t("th.data", ln), _t("md.dia", ln), _t("md.sessao", ln),
+                    _t("th.min", ln), _t("md.tsb_proj", ln)],
                    [[d["date"], d["weekday"], d["name"], d["duration_min"], d["tsb_after"]]
                     for d in plan["days"]])
     lines += ["", f"{s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos. "
@@ -496,12 +548,12 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   "O treino ajuda, mas a diferença maior vem da alimentação, que este relatório "
                   "não vê.", ""]
 
-    lines += ["## Recomendação", ""]
+    lines += [f"## {_t('ui.recomendacao', ln)}", ""]
     lines += [review or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
               "continha números que não estão nos dados e foi rejeitado. "
               "Os números e o plano acima são calculados e mantêm-se válidos._"]
 
-    lines += ["", "### Quando abrandar", "", slow_down_rule(rules), ""]
+    lines += ["", f"### {_t('ui.quando_abrandar', ln)}", "", slow_down_rule(rules, ln), ""]
     lines += ["", "---", "",
               "Orientação genérica gerada a partir dos teus próprios dados. "
               "Não substitui acompanhamento clínico ou de um treinador, "
@@ -509,8 +561,21 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     return "\n".join(lines)
 
 
+def idioma_do_perfil() -> str:
+    """A língua sai do perfil; COACH_LANG serve para testar."""
+    if os.environ.get("COACH_LANG"):
+        return escolher(os.environ["COACH_LANG"])
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import perfis
+        return escolher((perfis.ler(DATA_DIR) or {}).get("idioma"))
+    except Exception:                            # noqa: BLE001
+        return "en"
+
+
 def main() -> None:
     cfg = yaml.safe_load(CATALOGUE.read_text())
+    ln = idioma_do_perfil()
     m = build(connect())
 
     if m["coverage"]["activities"] == 0:
@@ -520,15 +585,15 @@ def main() -> None:
     ja_treinou_hoje = any(s["date"] == m["generated"] for s in m["recent"])
     plan = build_plan(m, cfg["workouts"], bool(flags), PLAN_DAYS,
                       skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"),
-                      extras=cfg)
+                      extras=cfg, ln=ln)
 
-    sessao = comentar_sessao(m)
-    analysis = analyse_training(m, flags)
-    review = review_and_recommend(m, plan, flags)
+    sessao = comentar_sessao(m, ln)
+    analysis = analyse_training(m, flags, ln)
+    review = review_and_recommend(m, plan, flags, ln)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report = render(m, flags, plan, analysis, review, cfg["recovery_flags"],
-                    cfg.get("objetivo"))
+                    cfg.get("objetivo"), ln)
     stamp = date.today().isoformat()
     (OUT_DIR / f"{stamp}.md").write_text(report)
     (OUT_DIR / "latest.md").write_text(report)
@@ -543,10 +608,11 @@ def main() -> None:
         "flags": flags,
         "analysis": analysis,
         "review": review,
-        "ramp_verdict": ramp_verdict(m["month"]["ramp"]),
-        "slow_down": slow_down_rule(cfg["recovery_flags"]),
+        "ramp_verdict": ramp_verdict(m["month"]["ramp"], ln),
+        "slow_down": slow_down_rule(cfg["recovery_flags"], ln),
+        "idioma": ln,
         "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
-        "assessment": assess(m),
+        "assessment": assess(m, ln),
         "sessao_comentario": sessao,
         "objetivo": cfg.get("objetivo") or {},
     }

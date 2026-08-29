@@ -291,7 +291,7 @@ def _plan(days: list[dict], hoje: str, ln: str) -> str:
             + (f'<div class=ritmo>{escape(d["ritmo"])}</div>' if d.get("ritmo") else "")
             + f'<div class=desc>{escape(d.get("description", ""))}</div>'
             + f'<div class=ver>{_t("ui.ver_sessao", ln)}</div></div>')
-    return f'<div class=plan>{"".join(cards)}</div>{"".join(_modal(x) for x in days)}'
+    return f'<div class=plan>{"".join(cards)}</div>{"".join(_modal(x, ln) for x in days)}'
 
 
 def _modal(d: dict, ln: str) -> str:
@@ -308,9 +308,9 @@ def _modal(d: dict, ln: str) -> str:
     if d.get("description"):
         partes.append(f'<p class=como>{escape(d["description"])}</p>')
     if d.get("estrutura"):
-        partes.append(linha_tempo(d["estrutura"]))
+        partes.append(linha_tempo(d["estrutura"], ln))
     if d.get("exercicios"):
-        partes.append(exercicios(d["exercicios"]))
+        partes.append(exercicios(d["exercicios"], ln))
     if d.get("motivo"):
         partes.append(f'<p class=porque>{_t("ui.porque_esta", ln)}: {escape(d["motivo"])}</p>')
     return (f'<dialog id="dia-{d["date"]}"><div class=modal>'
