@@ -175,7 +175,7 @@ def ramp(value) -> dict:
 
 def days_since_hard(days) -> dict:
     if days is None:
-        return _v("dsh", "Sessão dura há", "—", "", "atencao",
+        return _v("dsh", "Dias desde sessão dura", "—", "", "atencao",
                   "sem nenhuma sessão dura no histórico recente")
     if days > 21:
         e, l = "cuidado", "há muito sem estímulo intenso; a velocidade perde-se primeiro"
@@ -185,7 +185,7 @@ def days_since_hard(days) -> dict:
         e, l = "atencao", "sessão dura muito recente, cuidado com a seguinte"
     else:
         e, l = "bom", "espaçamento adequado"
-    return _v("dsh", "Sessão dura há", days, "dias", e, l,
+    return _v("dsh", "Dias desde sessão dura", days, "dias", e, l,
               "uma sessão dura é carga de 100 ou mais",
               escala(0, 25, [(2, "atencao"), (14, "bom"), (21, "atencao"), (25, "cuidado")], days),
               "entre 2 e 14 dias mantém o estímulo sem acumular fadiga",

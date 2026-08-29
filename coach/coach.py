@@ -112,6 +112,13 @@ CLITICO_BRASILEIRO = re.compile(
     r"\b(pode|podem|vai|vão|deve|devem|come(?:ça|çam)|costuma|costumam|"
     r"quer|querem|tende|tendem|passa|passam)\s+(se|me|te|nos)\s+\w+", re.I)
 
+# "permitem ao corpo se recuperar": o pronome antes do infinitivo. Em
+# português europeu seria "recuperar-se". A lista é curta de propósito, para
+# não apanhar o "se" condicional de "se recuperar bem, treina".
+REFLEXO_BRASILEIRO = re.compile(
+    r"\bse\s+(recuperar|adaptar|sentir|preparar|habituar|ajustar|fortalecer|"
+    r"desenvolver|manter|cansar)\b(?!\s*,)", re.I)
+
 # "está subindo" em vez de "está a subir": a construção mais óbvia do
 # português do Brasil, e a que um modelo treinado nele produz primeiro.
 GERUNDIO_CONTINUO = re.compile(
@@ -147,9 +154,10 @@ def portugues_europeu(texto: str) -> tuple[bool, str]:
     """Rejeita o que soa a tradução. Devolve o motivo, para o registo."""
     if GERUNDIO_CONTINUO.search(texto):
         return False, "construção 'estar + gerúndio'"
-    clitico = CLITICO_BRASILEIRO.search(texto)
-    if clitico:
-        return False, f"pronome antes do verbo: '{clitico.group(0)}'"
+    for padrao in (CLITICO_BRASILEIRO, REFLEXO_BRASILEIRO):
+        achado = padrao.search(texto)
+        if achado:
+            return False, f"pronome antes do verbo: '{achado.group(0)}'"
     gerundios = [g for g in GERUNDIO.findall(texto) if g.lower() not in NAO_GERUNDIO]
     if gerundios:
         return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
@@ -243,33 +251,35 @@ def describe(label: str, now, base, unit: str = "") -> str:
 
 
 def analyse_training(m: dict, flags: list[str]) -> str | None:
-    """Primeira chamada: leitura do que foi efetivamente treinado.
+    """Primeira chamada: pôr por palavras as leituras já calculadas.
 
-    A lista de sessões não vai no prompt de propósito. Ela está na tabela do
-    relatório, para a pessoa ler; ao modelo entregam-se só os totais.
+    O modelo não interpreta nada. Deu-se-lhe uma vez os números crus e ele
+    concluiu que HRV acima da base mais FC de repouso abaixo da base era
+    "desequilíbrio entre esforço e recuperação" — dois sinais bons lidos como
+    mau. Agora recebe o veredicto de cada métrica, feito em assess.py, e o
+    seu trabalho é só escrevê-lo de forma corrida.
     """
-    w7, w14 = m["windows"]["7d"], m["windows"]["14d"]
-    rec = m["recovery"]
+    w14 = m["windows"]["14d"]
+    leituras = "\n".join(
+        f"- {f['titulo']}: {f['valor']}{' ' + f['unidade'] if f['unidade'] else ''} — "
+        f"{ESTADOS[f['estado']][2]}, {f['leitura']}"
+        for f in assess(m))
 
-    return write(f"""Totais já calculados. Não contes nem calcules nada, cita-os como estão.
+    return write(f"""Leituras já feitas, com o veredicto de cada uma. Não as
+reinterpretes nem tires conclusões novas: o teu trabalho é escrevê-las de forma
+corrida.
 
-Últimos 7 dias: {w7['sessions']} sessões, {w7['minutes']} minutos ao todo, {w7['km']} km, média de {w7['mean_min']} minutos por sessão, {w7['hard']} sessões duras, {w7['rest_days']} dias sem treino.
-Últimos 14 dias: {w14['sessions']} sessões, {w14['minutes']} minutos ao todo, {w14['km']} km, média de {w14['mean_min']} minutos por sessão, {w14['hard']} sessões duras, {w14['rest_days']} dias sem treino.
-Sessão mais longa em 14 dias: {w14['longest_min']} minutos. Mais curta: {w14['shortest_min']} minutos.
+{leituras}
 
-Carga de treino: CTL {m['load']['ctl']}, ATL {m['load']['atl']}, TSB {m['load']['tsb']}.
-Dias desde a última sessão dura: {m['load']['days_since_hard']}.
-
-{describe('FC de repouso a 7 dias', rec['rhr_7d'], rec['rhr_28d'], ' bpm')}
-{describe('HRV a 7 dias', rec['hrv_7d'], rec['hrv_28d'])}
-Sono médio a 7 dias: {rec['sleep_h_7d']} horas.
+Contexto: nos últimos 14 dias foram {w14['sessions']} sessões, {w14['minutes']} minutos
+ao todo e {w14['rest_days']} dias sem treino.
 Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
 
-Escreve duas frases curtas, em português europeu, sem numerar, sobre o que
-estes totais dizem do treino das últimas duas semanas.
+Escreve duas ou três frases, em português europeu, sem numerar nem fazer lista,
+que digam à pessoa como está o seu treino. Começa pelo que está pior. Não
+inventes causas nem consequências que não estejam acima.
 
-Máximo 80 palavras. Usa no máximo dois números, copiados da lista acima. Não
-classifiques a forma como boa ou má: isso já está dito noutro sítio.""")
+Máximo 80 palavras. Usa no máximo dois números, copiados da lista.""")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
