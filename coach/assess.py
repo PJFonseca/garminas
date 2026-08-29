@@ -72,7 +72,7 @@ def rhr(now, base) -> dict:
 
 def hrv(now, base) -> dict:
     if now is None or base is None:
-        return _v("hrv", "Variabilidade cardíaca", "—", "", "bom", "sem dados suficientes")
+        return _v("hrv", "HRV", "—", "", "bom", "sem dados suficientes")
     pct = (now - base) / base * 100 if base else 0
     if pct < -12:
         e, l = "alerta", f"{pct:.0f}% abaixo da base: sistema nervoso sob stress"
@@ -82,7 +82,7 @@ def hrv(now, base) -> dict:
         e, l = "bom", "na base habitual"
     else:
         e, l = "bom", f"{pct:+.0f}% acima da base, boa recuperação"
-    return _v("hrv", "Variabilidade cardíaca", now, "", e, l, f"7 dias · base 28 dias {base}")
+    return _v("hrv", "HRV", now, "", e, l, f"7 dias · base 28 dias {base}")
 
 
 def sleep(hours) -> dict:
@@ -112,12 +112,12 @@ def ramp(value) -> dict:
         e, l = "atencao", "abaixo de 0.8: semana mais leve do que as anteriores"
     else:
         e, l = "cuidado", "muito abaixo das semanas anteriores, a forma vai cair"
-    return _v("ramp", "Progressão semanal", value, "", e, l, "última semana face à média das anteriores")
+    return _v("ramp", "Progressão", value, "", e, l, "última semana face à média das anteriores")
 
 
 def days_since_hard(days) -> dict:
     if days is None:
-        return _v("dsh", "Desde sessão dura", "—", "", "atencao",
+        return _v("dsh", "Sessão dura há", "—", "", "atencao",
                   "sem nenhuma sessão dura no histórico recente")
     if days > 21:
         e, l = "cuidado", "há muito sem estímulo intenso; a velocidade perde-se primeiro"
@@ -127,12 +127,12 @@ def days_since_hard(days) -> dict:
         e, l = "atencao", "sessão dura muito recente, cuidado com a seguinte"
     else:
         e, l = "bom", "espaçamento adequado"
-    return _v("dsh", "Desde sessão dura", days, "dias", e, l, "")
+    return _v("dsh", "Sessão dura há", days, "dias", e, l, "")
 
 
 def volume(minutes_7d, mean_week_minutes) -> dict:
     if not mean_week_minutes:
-        return _v("vol", "Volume, 7 dias", minutes_7d, "min", "bom", "sem histórico para comparar")
+        return _v("vol", "Volume 7 dias", minutes_7d, "min", "bom", "sem histórico para comparar")
     razao = minutes_7d / mean_week_minutes
     if razao < 0.6:
         e, l = "atencao", f"bem abaixo da média do mês ({mean_week_minutes} min)"
@@ -140,7 +140,7 @@ def volume(minutes_7d, mean_week_minutes) -> dict:
         e, l = "cuidado", f"bem acima da média do mês ({mean_week_minutes} min)"
     else:
         e, l = "bom", f"em linha com a média do mês ({mean_week_minutes} min)"
-    return _v("vol", "Volume, 7 dias", minutes_7d, "min", e, l, "")
+    return _v("vol", "Volume 7 dias", minutes_7d, "min", e, l, "")
 
 
 ORDEM = {"alerta": 0, "cuidado": 1, "atencao": 2, "bom": 3}
@@ -160,3 +160,22 @@ def assess(m: dict) -> list[dict]:
         days_since_hard(load["days_since_hard"]),
     ]
     return sorted(fichas, key=lambda f: ORDEM[f["estado"]])
+
+
+# Os nomes que a Garmin usa internamente não são para ler.
+DESPORTOS = {
+    "running": "Corrida", "treadmill_running": "Passadeira",
+    "trail_running": "Trail", "indoor_running": "Corrida interior",
+    "walking": "Caminhada", "hiking": "Caminhada na natureza",
+    "cycling": "Ciclismo", "indoor_cycling": "Bicicleta interior",
+    "mountain_biking": "BTT", "road_biking": "Estrada",
+    "swimming": "Natação", "lap_swimming": "Natação em piscina",
+    "open_water_swimming": "Águas abertas",
+    "strength_training": "Força", "indoor_cardio": "Cardio interior",
+    "elliptical": "Elíptica", "rowing": "Remo", "yoga": "Ioga",
+    "unknown": "Sem categoria",
+}
+
+
+def desporto(chave: str) -> str:
+    return DESPORTOS.get(chave, chave.replace("_", " ").capitalize())

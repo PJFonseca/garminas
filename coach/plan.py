@@ -78,7 +78,9 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
     # e o plano seguinte encolhia para quase nada — visto acontecer: 111
     # minutos numa semana leve davam um tecto de 122, e o plano saía com oito
     # dias de descanso em catorze.
-    base_minutes = max(load["minutes_7d"], m.get("month", {}).get("mean_week_minutes", 0))
+    mes = m.get("month", {})
+    base_minutes = max(load["minutes_7d"], mes.get("mean_week_minutes_active", 0)
+                       or mes.get("mean_week_minutes", 0))
     week_minutes_cap = max(round(base_minutes * RAMP_CAP), 120)
 
     plan, quality_week, minutes_week = [], 0, 0

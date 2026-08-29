@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from html import escape
 
-from assess import ESTADOS
+from assess import ESTADOS, desporto
 
 CSS = """
 .viz { --s1:#2a78d6; --seq-leve:#9ec5f4; --seq-med:#3987e5; --seq-duro:#1c5cab;
@@ -56,6 +56,10 @@ CSS = """
 .col .zero { width:100%; height:2px; background:var(--line); border-radius:2px; }
 .axis { display:flex; gap:.5rem; border-top:1px solid var(--line); padding-top:.35rem; }
 .axis span { flex:1; text-align:center; font-size:.75rem; color:var(--dim); font-variant-numeric:tabular-nums; }
+.plot { position:relative; }
+.media { position:absolute; left:0; right:0; border-top:1px dashed var(--dim); opacity:.55; }
+.media span { position:absolute; right:0; top:-1.15rem; font-size:.7rem; color:var(--dim);
+  background:var(--bg); padding:0 .25rem; }
 .tip { position:absolute; bottom:100%; left:50%; transform:translate(-50%,-.4rem); white-space:nowrap;
   background:var(--fg); color:var(--bg); font-size:.75rem; padding:.25rem .5rem; border-radius:5px;
   opacity:0; pointer-events:none; transition:opacity .12s; z-index:2; }
@@ -150,7 +154,11 @@ def _chart(weeks: list[dict]) -> str:
             f'{w["sessions"]} sessões · {w["minutes"]} min · {w["km"]} km</span>'
             f'<span class=n>{w["load"]}</span>{barra}</div>')
         axis.append(f'<span>{w["start"][5:]}</span>')
-    return (f'<div class=chart>{"".join(cols)}</div>'
+    # Linha da média: sem ela, "319" e "134" são só dois números altos.
+    media = round(sum(w["load"] for w in ordered) / len(ordered)) if ordered else 0
+    marca = (f'<div class=media style="bottom:{round(media / top * 100)}%">'
+             f'<span>média {media}</span></div>') if media else ""
+    return (f'<div class=plot><div class=chart>{"".join(cols)}</div>{marca}</div>'
             f'<div class=axis>{"".join(axis)}</div>')
 
 
@@ -200,7 +208,7 @@ def report_html(d: dict) -> str:
     if d.get("today_done"):
         s = d["today_done"]
         km = f', {s["km"]} km' if s["km"] else ""
-        agora = (f'<b>Já treinaste hoje</b> — {escape(s["sport"])}, {s["minutes"]} min{km}, '
+        agora = (f'<b>Já treinaste hoje</b> — {escape(desporto(s["sport"]))}, {s["minutes"]} min{km}, '
                  f'carga {s["load"]}. <span class=muted>O plano começa amanhã.</span>')
     else:
         p0 = plan["days"][0]
@@ -214,7 +222,7 @@ def report_html(d: dict) -> str:
                  f'<p class=legend>Enquanto durarem, só sessões de recuperação ficam elegíveis.</p></div>')
 
     sessoes = "".join(
-        f'<tr><td>{s["date"]}</td><td>{escape(s["sport"])}</td>'
+        f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"]))}</td>'
         f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or "—"}</td>'
         f'<td class=num>{s["avg_hr"] or "—"}</td><td class=num>{s["load"]}</td></tr>'
         for s in m["recent"])

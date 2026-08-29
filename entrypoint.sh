@@ -9,6 +9,16 @@
 #
 set -e
 
+# O container corre como root, por isso tudo o que escreve em /data e /models
+# fica com dono root — e depois nem o download de um modelo a partir do host
+# funciona. Com PUID/PGID definidos, devolve-se a posse ao arranque.
+if [ -n "${PUID:-}" ] && [ -n "${PGID:-}" ]; then
+  for d in /data /models; do
+    [ -d "$d" ] && chown -R "${PUID}:${PGID}" "$d" 2>/dev/null || true
+  done
+  umask 0002
+fi
+
 case "${1:-cron}" in
   setup)
     exec python3 /opt/coach/setup.py

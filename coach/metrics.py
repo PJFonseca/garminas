@@ -223,6 +223,13 @@ def month_review(acts: list[dict], today: date) -> dict:
         "ramp": ramp,
         "mean_week_load": round(sum(loads) / len(loads)) if loads else 0,
         "mean_week_minutes": round(sum(w["minutes"] for w in weeks) / len(weeks)) if weeks else 0,
+        # Só as semanas com treino. Uma semana a zero é uma pausa ou uma falha
+        # de dados; em qualquer dos casos não deve definir o tecto da próxima
+        # quinzena, senão uma paragem passa a ser o novo normal.
+        "mean_week_minutes_active": (
+            round(sum(w["minutes"] for w in weeks if w["sessions"])
+                  / len([w for w in weeks if w["sessions"]]))
+            if any(w["sessions"] for w in weeks) else 0),
         "hard_sessions": len([a for a in last28 if a["load"] >= 100]),
         "rest_days": 28 - len({a["date"] for a in last28}),
         "longest_km": round(max((a["distance_m"] for a in runs), default=0) / 1000, 1),

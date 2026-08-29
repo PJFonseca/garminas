@@ -33,8 +33,12 @@ MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 TARGET = MODELS_DIR / "model.gguf"
 META = MODELS_DIR / "model.json"
 
-# Todos verificados a 2026-08-29. Quantização Q4_K_M: o melhor compromisso
-# entre tamanho e qualidade para inferência em CPU.
+# Todos verificados a 2026-08-29, e todos sem modo de raciocínio. Um modelo
+# que "pensa" antes de responder — o Qwen3 8B, por exemplo — enche o contexto
+# com o raciocínio e rebenta com "Context size has been exceeded" antes de
+# escrever a resposta. Testado, não suposto.
+#
+# Quantização Q4_K_M: o melhor compromisso entre tamanho e qualidade em CPU.
 CATALOGUE = [
     {
         "id": "qwen3-4b",
@@ -64,6 +68,13 @@ CATALOGUE = [
         "note": "Para máquinas fracas ou com pouca RAM. Texto mais seco, mas cumpre.",
         "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
     },
+    {
+        "id": "gemma3-12b",
+        "name": "Gemma 3 12B Instruct",
+        "mib": 6962,
+        "note": "Melhor português do catálogo. Precisa de 8 núcleos ou mais e 8 GB livres; numa NAS de 2 seria insuportável.",
+        "url": "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
+    },
 ]
 
 
@@ -84,6 +95,8 @@ def choose() -> dict | None:
         sys.exit(f"COACH_MODEL={preset} não corresponde a nenhuma opção do catálogo.")
 
     print("\nQue modelo queres usar para redigir os relatórios?\n")
+    print("  Quanto maior, melhor escreve — e mais devagar. Numa NAS de dois")
+    print("  núcleos fica-te pelos 4B; num PC com 8 ou mais, sobe.\n")
     for i, m in enumerate(CATALOGUE, 1):
         print(f"  {i}. {m['name']:<24} {human(m['mib']):>9}")
         print(f"     {m['note']}")

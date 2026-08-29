@@ -30,7 +30,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 from metrics import build, connect  # noqa: E402
-from assess import ESTADOS, assess  # noqa: E402
+from assess import ESTADOS, assess, desporto  # noqa: E402
 from plan import build_plan, eligible  # noqa: E402
 
 CATALOGUE = Path(__file__).with_name("workouts.yaml")
@@ -55,13 +55,14 @@ def check_flags(m: dict, rules: dict) -> list[str]:
     return flags
 
 
-def ask_llm(system: str, prompt: str, max_tokens: int = 400) -> str | None:
+def ask_llm(system: str, prompt: str, max_tokens: int = 400,
+            temperature: float = 0.2) -> str | None:
     body = json.dumps({
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2,
+        "temperature": temperature,
         "max_tokens": max_tokens,
     }).encode()
 
@@ -77,13 +78,85 @@ def ask_llm(system: str, prompt: str, max_tokens: int = 400) -> str | None:
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s*")
 
-SYSTEM = ("És um treinador conciso e honesto. Escreves em português europeu, sem "
-          "entusiasmo artificial. Nunca fazes contas: citas apenas números que te "
-          "são dados, copiados tal como aparecem.")
+SYSTEM = """És um treinador conciso e honesto. Escreves em português europeu de
+Portugal, sem entusiasmo artificial.
+
+Regras de língua, obrigatórias:
+- Nunca uses gerúndio para ação em curso. Escreve "está a subir", nunca "está
+  subindo"; "a manter a base", nunca "mantendo a base".
+- Não encadeies gerúndios do género "indicando", "permitindo", "evitando",
+  "preservando". Usa orações com "que", "para" ou "porque".
+- Vocabulário: treino e não treinamento, desporto e não esporte, planear e não
+  planejar, registo e não registro, ecrã e não tela, equipa e não time.
+- Nunca fazes contas: citas apenas números que te são dados, tal como aparecem."""
+
+# Palavras que denunciam português do Brasil ou tradução do inglês. A troca é
+# segura porque nenhuma delas tem outro sentido em português europeu.
+BRASILEIRISMOS = {
+    "treinamento": "treino", "treinamentos": "treinos",
+    "esporte": "desporto", "esportes": "desportos", "esportiva": "desportiva",
+    "planejar": "planear", "planejamento": "planeamento",
+    "registro": "registo", "registros": "registos",
+    "monitoramento": "monitorização", "usuário": "utilizador",
+    "tela": "ecrã", "time": "equipa", "aeróbico": "aeróbio",
+    "condicionamento": "condição física", "academia": "ginásio",
+    "alongamento": "alongamentos", "performance": "desempenho",
+    "estresse": "stress", "alternancia": "alterna", "ginástica": "ginástica",
+    "atividades": "atividades", "café": "café",
+}
+
+# Em português europeu o pronome vem depois do verbo: "pode adaptar-se", não
+# "pode se adaptar". É a marca mais audível do português do Brasil, e nenhuma
+# lista de palavras a apanha.
+CLITICO_BRASILEIRO = re.compile(
+    r"\b(pode|podem|vai|vão|deve|devem|come(?:ça|çam)|costuma|costumam|"
+    r"quer|querem|tende|tendem|passa|passam)\s+(se|me|te|nos)\s+\w+", re.I)
+
+# "está subindo" em vez de "está a subir": a construção mais óbvia do
+# português do Brasil, e a que um modelo treinado nele produz primeiro.
+GERUNDIO_CONTINUO = re.compile(
+    r"\b(est(?:á|ão|ava|avam|ou)|vem|vêm|continua|continuam|anda|andam)\s+\w+ndo\b", re.I)
+# Nem tudo o que acaba em -ndo é gerúndio: "quando", "fundo" e "segundo" são
+# palavras correntes, e "forma de fundo" está no próprio relatório.
+NAO_GERUNDIO = {"quando", "fundo", "mundo", "segundo", "profundo", "comando",
+                "bando", "brando", "redondo", "tremendo", "estupendo"}
+GERUNDIO = re.compile(r"\b\w{3,}(?:ando|endo|indo)\b", re.I)
+
+AVISO_LINGUA = ("\n\nA tua resposta anterior não estava em português europeu: tinha "
+                "gerúndios a mais ou construções do português do Brasil. Reescreve "
+                "sem nenhum gerúndio, usando \"a\" mais infinitivo e orações com "
+                "\"que\" ou \"para\".")
 
 STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos dados "
             "acima. Reescreve usando exclusivamente os números listados, tal como "
             "aparecem. Não calcules médias, somas, contagens nem diferenças.")
+
+
+def aportuguesar(texto: str) -> str:
+    """Troca palavras inequivocamente brasileiras pelas europeias."""
+    def troca(m):
+        palavra = m.group(0)
+        nova = BRASILEIRISMOS[palavra.lower()]
+        return nova.capitalize() if palavra[0].isupper() else nova
+
+    padrao = re.compile(r"\b(" + "|".join(BRASILEIRISMOS) + r")\b", re.I)
+    return padrao.sub(troca, texto)
+
+
+def portugues_europeu(texto: str) -> tuple[bool, str]:
+    """Rejeita o que soa a tradução. Devolve o motivo, para o registo."""
+    if GERUNDIO_CONTINUO.search(texto):
+        return False, "construção 'estar + gerúndio'"
+    clitico = CLITICO_BRASILEIRO.search(texto)
+    if clitico:
+        return False, f"pronome antes do verbo: '{clitico.group(0)}'"
+    gerundios = [g for g in GERUNDIO.findall(texto) if g.lower() not in NAO_GERUNDIO]
+    if gerundios:
+        return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
+    restos = [p for p in BRASILEIRISMOS if re.search(rf"\b{p}\b", texto, re.I)]
+    if restos:
+        return False, "vocabulário: " + ", ".join(restos)
+    return True, ""
 
 
 def _numbers(text: str) -> set[str]:
@@ -106,16 +179,33 @@ def write(prompt: str, max_tokens: int = 400) -> str | None:
     é pior do que secção nenhuma.
     """
     allowed = _numbers(prompt)
-    for attempt in (1, 2):
-        text = ask_llm(SYSTEM, prompt if attempt == 1 else prompt + STRICTER, max_tokens)
+    reforco = ""
+    melhor = None
+    for attempt in (1, 2, 3):
+        text = ask_llm(SYSTEM, prompt + reforco, max_tokens,
+                       temperature=0.2 + 0.2 * (attempt - 1))
         if text is None:
             return None
+
         invented = _numbers(LIST_MARKER.sub("", text)) - allowed
-        if not invented:
+        if invented:
+            print(f"tentativa {attempt}: números fora dos dados {sorted(invented)}",
+                  file=sys.stderr)
+            reforco = STRICTER
+            continue
+
+        text = aportuguesar(text)
+        ok, motivo = portugues_europeu(text)
+        if ok:
             return text
-        print(f"tentativa {attempt}: números fora dos dados {sorted(invented)}",
-              file=sys.stderr)
-    return None
+        print(f"tentativa {attempt}: não é português europeu ({motivo})", file=sys.stderr)
+        melhor = melhor or text        # guardar o primeiro sem números inventados
+        reforco = AVISO_LINGUA
+
+    # Os números estão certos e a língua não está perfeita: vale mais o texto
+    # aportuguesado do que secção nenhuma. O contrário — números errados — é
+    # que não se aceita.
+    return melhor
 
 
 def ramp_verdict(ramp) -> str:
@@ -175,11 +265,11 @@ Dias desde a última sessão dura: {m['load']['days_since_hard']}.
 Sono médio a 7 dias: {rec['sleep_h_7d']} horas.
 Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
 
-Escreve duas frases curtas, em português europeu:
-1. O que estes totais dizem sobre o treino das últimas duas semanas.
-2. Se a carga e a recuperação estão em equilíbrio.
+Escreve duas frases curtas, em português europeu, sem numerar, sobre o que
+estes totais dizem do treino das últimas duas semanas.
 
-Máximo 100 palavras. Usa no máximo três números, todos retirados da lista acima.""")
+Máximo 80 palavras. Usa no máximo dois números, copiados da lista acima. Não
+classifiques a forma como boa ou má: isso já está dito noutro sítio.""")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
@@ -199,12 +289,8 @@ def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
     )
     s = plan["summary"]
 
-    return write(f"""Últimas quatro semanas, já calculadas:
-{weeks}
-
-Progressão da última semana face à média das anteriores: {month['ramp']} (acima de 1.3 é risco de lesão, abaixo de 0.8 é perda de forma).
-Em 28 dias: {month['hard_sessions']} sessões duras e {month['rest_days']} dias sem treino.
-Sessão mais longa do período: {month['longest_min']} minutos, {month['longest_km']} km.
+    return write(f"""Nas últimas quatro semanas treinaste, por semana e em média, \
+{month['mean_week_minutes']} minutos.
 Bandeiras de recuperação ativas hoje: {'; '.join(flags) if flags else 'nenhuma'}.
 
 Plano já calculado para os próximos {len(plan['days'])} dias, que deves explicar e
@@ -213,14 +299,16 @@ não alterar:
 
 Dias do plano com sessão dura: {', '.join(hard_days) if hard_days else 'nenhum'}.
 Dias do plano sem treino: {', '.join(rest_days) if rest_days else 'nenhum'}.
-No total: {s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos, e o CTL passa de {s['ctl_start']} para {s['ctl_end']}.
+No total: {s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos.
 
-Escreve, em português europeu:
-1. A tendência das últimas quatro semanas. Se falares de média semanal, usa
-   {month['mean_week_load']} de carga — os outros valores são semanas isoladas.
-2. Porque é que o plano acima faz sentido face a essa tendência, em duas frases.
+Escreve, em português europeu, sem numerar:
+Um parágrafo a explicar a lógica deste plano — porque estão as sessões duras
+onde estão, e para que servem os dias sem treino.
+Depois uma frase sobre o que vigiar durante as sessões.
 
-Máximo 100 palavras. Não menciones dias nem sessões que não estejam nas listas acima.""", max_tokens=520)
+Máximo 90 palavras. Não avalies a forma nem a progressão: isso já está dito
+noutro sítio do relatório. Não menciones dias nem sessões fora das listas.""",
+                 max_tokens=420)
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
@@ -268,7 +356,7 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += ["## Treinos recentes", ""]
     if m["recent"]:
         lines += table(["Data", "Desporto", "Min", "km", "FC média", "Carga"],
-                       [[s["date"], s["sport"], s["minutes"], s["km"] or None,
+                       [[s["date"], desporto(s["sport"]), s["minutes"], s["km"] or None,
                          s["avg_hr"], s["load"]] for s in m["recent"]])
     else:
         lines += ["Sem sessões registadas."]
@@ -293,7 +381,7 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     feito_hoje = next((s for s in m["recent"] if s["date"] == m["generated"]), None)
     lines += ["## Hoje", ""]
     if feito_hoje:
-        lines += [f"Já treinaste: **{feito_hoje['sport']}**, {feito_hoje['minutes']} min"
+        lines += [f"Já treinaste: **{desporto(feito_hoje['sport'])}**, {feito_hoje['minutes']} min"
                   + (f", {feito_hoje['km']} km" if feito_hoje["km"] else "")
                   + f", carga {feito_hoje['load']}. O plano abaixo começa amanhã.", ""]
     else:

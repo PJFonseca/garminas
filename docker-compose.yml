@@ -19,6 +19,8 @@ services:
       TZ: ${TZ:-Europe/Lisbon}
       GARMIN_DATA_DIR: /data
       LLM_URL: http://llm:8080/v1/chat/completions
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
 
     volumes:
       # Base de dados SQLite, ficheiros FIT, perfil do browser e credenciais.
@@ -51,6 +53,8 @@ services:
       GARMIN_DATA_DIR: /data
       LLM_URL: http://llm:8080/v1/chat/completions
       WEB_HOST: ${WEB_HOST:-0.0.0.0}
+      PUID: ${PUID:-}
+      PGID: ${PGID:-}
     ports:
       # Acessível a partir de qualquer máquina da rede local. Para restringir
       # ao próprio host, pôr WEB_BIND=127.0.0.1 no .env.
@@ -83,7 +87,7 @@ services:
         exec /app/llama-server
         -m /models/${MODEL_FILE:-model.gguf}
         --host 0.0.0.0 --port 8080
-        --ctx-size 2048
+        --ctx-size ${LLM_CTX:-4096}
         --threads ${LLM_THREADS:-4}
         --n-predict 384
     volumes:
