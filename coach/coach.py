@@ -504,7 +504,7 @@ def review_and_recommend(m: dict, plan: dict, flags: list[str], ln: str = "en") 
     s = plan["summary"]
 
     return write(f"""Nas últimas quatro semanas treinaste, por semana e em média, \
-{month['mean_week_minutes']} minutos.
+{month['mean_week_minutes']} minutos e {month['mean_week_load']} de carga.
 Bandeiras de recuperação ativas hoje: {'; '.join(flags) if flags else 'nenhuma'}.
 {contexto_pessoal()}
 
@@ -602,6 +602,9 @@ FOUR WEEKS
 """ + "\n".join(
         f"  week of {w['start']}: {w['sessions']} sessions, {w['minutes']} min, "
         f"{w['km']} km, load {w['load']}" for w in reversed(m["month"]["weeks"])) + f"""
+  average across the four: {m['month']['mean_week_load']} load, \
+{m['month']['mean_week_minutes']} minutes
+  ramp: {ramp_verdict(m['month']['ramp'], ln)}
 WELLBEING AND PREDICTIONS
 {chr(10).join(bem_estar) if bem_estar else "  no data"}
 RECOVERY FLAGS
