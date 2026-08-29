@@ -1080,3 +1080,30 @@ DETAIL = {'es': {'m.eff': 'Progreso',
 
 for _lang, _extra in DETAIL.items():
     ALL.setdefault(_lang, {}).update(_extra)
+
+
+PREFS = {'es': {'ui.your_style': 'Cómo quieres que el entrenador te hable',
+    'ui.style_help': 'Instrucciones al modelo sobre el tono y la forma. Se suma a las reglas de estilo y no puede saltárselas: sigue sin inventar números ni decidir el plan.',
+    'ui.style_example': 'Por ejemplo: háblame sin rodeos, una idea por frase, sin halagos.',
+    'ui.your_notes': 'Tus notas',
+    'ui.notes_help': 'Lo que el entrenador debe saber de ti: objetivos, lesiones, lo que te gusta y lo que odias, tus horarios. Va con los datos, como contexto.',
+    'ui.notes_example': 'Por ejemplo: media maratón en marzo, rodilla derecha sensible, solo puedo entrenar por la mañana.'}, 'fr': {'ui.your_style': 'Comment tu veux que le coach te parle',
+    'ui.style_help': "Consignes au modèle sur le ton et la forme. Elles s'ajoutent aux règles de style sans pouvoir les contourner : il n'inventera toujours pas de chiffres et ne décidera pas le plan.", 'ui.style_example': 'Par exemple : parle franchement, une idée par phrase, pas de compliments.',
+    'ui.your_notes': 'Tes notes',
+    'ui.notes_help': 'Ce que le coach doit savoir de toi : objectifs, blessures, ce que tu aimes et ce que tu détestes, tes horaires. Cela accompagne les données, comme contexte.',
+    'ui.notes_example': 'Par exemple : semi-marathon en mars, genou droit sensible, je ne peux courir que le matin.'}, 'de': {'ui.your_style': 'Wie der Coach mit dir sprechen soll',
+    'ui.style_help': 'Anweisungen an das Modell zu Ton und Form. Sie ergänzen die Stilregeln und können sie nicht aushebeln: es erfindet weiterhin keine Zahlen und entscheidet den Plan nicht.',
+    'ui.style_example': 'Zum Beispiel: sag es direkt, ein Gedanke pro Satz, kein Lob.',
+    'ui.your_notes': 'Deine Notizen',
+    'ui.notes_help': 'Was der Coach über dich wissen sollte: Ziele, Verletzungen, was dir liegt und was nicht, deine Zeiten. Es geht mit den Daten mit, als Kontext.',
+    'ui.notes_example': 'Zum Beispiel: Halbmarathon im März, rechtes Knie empfindlich, ich kann nur morgens trainieren.'}, 'it': {'ui.your_style': "Come vuoi che l'allenatore ti parli", 'ui.style_help': 'Istruzioni al modello su tono e forma. Si aggiungono alle regole di stile e non possono scavalcarle: continua a non inventare numeri e a non decidere il piano.',
+    'ui.style_example': "Per esempio: parlami senza giri di parole, un'idea per frase, niente complimenti.", 'ui.your_notes': 'Le tue note',
+    'ui.notes_help': "Quello che l'allenatore deve sapere di te: obiettivi, infortuni, cosa ti piace e cosa detesti, i tuoi orari. Va con i dati, come contesto.", 'ui.notes_example': 'Per esempio: mezza maratona a marzo, ginocchio destro sensibile, posso allenarmi solo la mattina.'}, 'zh': {'ui.your_style': '你希望教练怎么跟你说话',
+    'ui.style_help': '给模型的语气与表达说明。它会加到既有的写作规则之后，但不能凌驾其上：仍然不会编造数字，也不会决定计划。',
+    'ui.style_example': '例如：直说，一句话一个意思，不要恭维。',
+    'ui.your_notes': '你的备注',
+    'ui.notes_help': '教练该知道的关于你的事：目标、伤病、喜欢和讨厌的训练、你的时间安排。它会跟数据一起作为背景。',
+    'ui.notes_example': '例如：三月要跑半马，右膝敏感，只能早上训练。'}}
+
+for _lang, _extra in PREFS.items():
+    ALL.setdefault(_lang, {}).update(_extra)
