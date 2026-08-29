@@ -281,7 +281,16 @@ def aportuguesar(texto: str) -> str:
 
 
 def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
-    """Rejeita o que soa a tradução. Devolve o motivo, para o registo.
+    """Decide se vale a pena mandar o texto de volta ao modelo.
+
+    A regra, aprendida à custa de três rondas de guardas severas de mais:
+    rejeita-se o que está errado, tolera-se o que está apenas fraco, e
+    corrige-se o que tem conserto. Uma frase morna custa a quem lê; uma
+    secção vazia custa mais, e é o que se ganha quando se rejeita três vezes
+    seguidas um modelo que leva dois minutos e meio por tentativa.
+
+    Errado: português do Brasil, e o resto tratado em arranjar().
+    Fraco: fórmulas de relatório e gerúndios, tolerados até acumularem.
 
     As fórmulas de relatório valem para qualquer língua. Os gerúndios e o
     pronome antes do verbo são defeitos do português, e correr essas
@@ -304,8 +313,8 @@ def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
     if len(gerundios) >= 3:
         return False, "gerúndios encadeados: " + ", ".join(sorted(set(gerundios)))
     achados = [c for c in CLICHES if c in texto.lower()]
-    if achados:
-        return False, "fórmula de relatório: " + ", ".join(achados)
+    if len(achados) >= 3:
+        return False, "fórmulas de relatório: " + ", ".join(achados)
     restos = [p for p in BRASILEIRISMOS if re.search(rf"\b{p}\b", texto, re.I)]
     if restos:
         return False, "vocabulário: " + ", ".join(restos)
