@@ -279,11 +279,14 @@ Contexto: nos últimos 14 dias foram {w14['sessions']} sessões, {w14['minutes']
 ao todo e {w14['rest_days']} dias sem treino.
 Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
 
-Escreve duas ou três frases, em português europeu, sem numerar nem fazer lista,
-que digam à pessoa como está o seu treino. Começa pelo que está pior. Não
-inventes causas nem consequências que não estejam acima.
+Escreve duas frases, em português europeu, sem numerar nem fazer lista.
 
-Máximo 80 palavras. Usa no máximo dois números, copiados da lista.""")
+Não enumeres as métricas uma a uma: elas já estão à vista na mesma página, e
+repeti-las não acrescenta nada. Diz antes o que o conjunto significa: qual é a
+única coisa que mais limita este treino neste momento, e o que muda se ela for
+tratada.
+
+Máximo 60 palavras. Usa no máximo dois números, copiados da lista.""")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:

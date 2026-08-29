@@ -32,9 +32,24 @@ CSS = """
 .today b { font-size:1.05rem; }
 .today .muted { color:var(--dim); }
 
-.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(19rem,1fr)); gap:.7rem; margin:.75rem 0 1.5rem; }
-.tile { border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
-.tile .head { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(21rem,1fr)); gap:.8rem; margin:.75rem 0 2rem; }
+.tile { border:1px solid var(--line); border-radius:10px; padding:1rem 1.15rem 1.15rem; }
+.tile .head { display:flex; align-items:baseline; justify-content:space-between; gap:.6rem;
+  margin-bottom:.35rem; }
+
+/* As que estão bem não precisam de ocupar o mesmo espaço das que não estão. */
+.calmas { display:grid; grid-template-columns:repeat(auto-fit,minmax(24rem,1fr)); gap:.15rem 1.5rem;
+  margin:.5rem 0 2rem; }
+.linha { display:grid; grid-template-columns:11rem auto 1fr; align-items:center; gap:.8rem;
+  padding:.5rem .2rem; border-bottom:1px solid var(--line); }
+.linha .nome { font-size:.85rem; color:var(--dim); }
+.linha .val { font-size:1.05rem; font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.linha .val .u { font-size:.8rem; font-weight:400; color:var(--dim); }
+.linha .diz { font-size:.85rem; color:var(--dim); }
+.linha .mini { grid-column:1 / -1; margin:.15rem 0 0; }
+.mini .track { height:.3rem; }
+.mini .marker { top:-.12rem; height:.55rem; }
+h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5rem; }
 .tile .k { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
 .tile .v { font-size:1.6rem; font-weight:650; line-height:1.25; font-variant-numeric:tabular-nums; }
 .tile .g { font-size:.82rem; color:var(--dim); }
@@ -108,9 +123,12 @@ CSS = """
 .z-critical{background:color-mix(in srgb,var(--critical) 45%,transparent)}
 .marker { position:absolute; top:-.2rem; width:3px; height:.85rem; border-radius:2px;
   background:var(--fg); box-shadow:0 0 0 2px var(--bg); transform:translateX(-1.5px); }
-.scale { display:flex; justify-content:space-between; gap:.5rem; font-size:.72rem;
-  color:var(--dim); margin-top:.3rem; }
-.scale .alvo { text-align:right; }
+/* O alvo tem linha própria: espremido entre o mínimo e o máximo, partia em
+   duas e sobrepunha-se aos números das pontas. */
+.scale { display:flex; justify-content:space-between; font-size:.72rem;
+  color:var(--dim); margin-top:.28rem; font-variant-numeric:tabular-nums; }
+.alvo { font-size:.78rem; color:var(--dim); margin-top:.15rem; }
+.alvo::before { content:"normal: "; opacity:.75; }
 .tile .r .dot { font-weight:700; }
 .e-good .dot{color:var(--good)} .e-warning .dot{color:var(--warn)}
 .e-serious .dot{color:var(--serious)} .e-critical .dot{color:var(--critical)}
@@ -143,7 +161,7 @@ def _tsb_state(tsb: float) -> tuple[str, str, str]:
     return "b-good", "equilibrado", "●"
 
 
-def _meter(ficha: dict) -> str:
+def _meter(ficha: dict, compacto: bool = False) -> str:
     """Onde o valor cai entre o mau e o bom.
 
     Sem isto, "a corrigir" é um rótulo sem fasquia: diz que está mal, mas não
@@ -155,11 +173,29 @@ def _meter(ficha: dict) -> str:
     zonas = "".join(f'<i class="z-{ESTADOS[z["estado"]][0]}" style="width:{z["largura"]}%"></i>'
                     for z in e["zonas"])
     limite = lambda x: f"{x:g}"
+    if compacto:
+        return (f'<div class="meter mini"><div class=track>{zonas}'
+                f'<b class=marker style="left:{e["pos"]}%"></b></div></div>')
     return (f'<div class=meter><div class=track>{zonas}'
             f'<b class=marker style="left:{e["pos"]}%"></b></div>'
             f'<div class=scale><span>{limite(e["min"])}</span>'
-            f'<span class=alvo>{escape(ficha["alvo"])}</span>'
-            f'<span>{limite(e["max"])}</span></div></div>')
+            f'<span>{limite(e["max"])}</span></div>'
+            f'<div class=alvo>{escape(ficha["alvo"])}</div></div>')
+
+
+def _linha(ficha: dict) -> str:
+    """Versão de uma linha, para o que está dentro do normal.
+
+    Oito mosaicos do mesmo tamanho obrigam a ler os oito para descobrir os
+    três que interessam. O que está bem confirma-se de relance; só o que está
+    fora do sítio merece espaço.
+    """
+    css, icone, _ = ESTADOS[ficha["estado"]]
+    unidade = f' <span class=u>{escape(ficha["unidade"])}</span>' if ficha["unidade"] else ""
+    return (f'<div class="linha e-{css}"><span class=nome>{escape(ficha["titulo"])}</span>'
+            f'<span class=val>{ficha["valor"]}{unidade}</span>'
+            f'<span class=diz><span class=dot>{icone}</span> {escape(ficha["leitura"])}</span>'
+            f'{_meter(ficha, compacto=True)}</div>')
 
 
 def _tile(ficha: dict) -> str:
@@ -237,17 +273,23 @@ def report_html(d: dict) -> str:
     fichas = d.get("assessment") or []
     cls, estado, icone = _tsb_state(load["tsb"])
 
-    # O que não está bem, primeiro e em português claro. Se estiver tudo bem,
-    # dizê-lo também — silêncio não é a mesma coisa que boa notícia.
+    # Separar o que pede ação do que só precisa de confirmação. Antes, a mesma
+    # informação aparecia três vezes: numa caixa de resumo, nos mosaicos, e
+    # outra vez em texto na análise.
     problemas = [f for f in fichas if f["estado"] != "bom"]
+    calmas = [f for f in fichas if f["estado"] == "bom"]
+
     if problemas:
-        itens = "".join(
-            f'<li><b>{escape(f["titulo"])}</b> ({f["valor"]}{" " + f["unidade"] if f["unidade"] else ""}): '
-            f'{escape(f["leitura"])}</li>' for f in problemas[:4])
-        resumo_html = (f'<div class=resumo><h3>A precisar de atenção</h3><ul>{itens}</ul></div>')
+        estado_html = (
+            f'<h2>A corrigir <span class=conta>{len(problemas)} de {len(fichas)}</span></h2>'
+            f'{LEGENDA}<div class=tiles>{"".join(_tile(f) for f in problemas)}</div>')
     else:
-        resumo_html = ('<div class=resumo><h3>Está tudo dentro do esperado</h3>'
-                       '<p class=legend>Nenhuma métrica fora dos limites. Segue o plano.</p></div>')
+        estado_html = ('<h2>Está tudo dentro do esperado</h2>'
+                       '<p class=legend>Nenhuma métrica fora dos limites. Segue o plano.</p>')
+    if calmas:
+        estado_html += (
+            f'<h2>Dentro do normal <span class=conta>{len(calmas)}</span></h2>'
+            f'<div class=calmas>{"".join(_linha(f) for f in calmas)}</div>')
 
     if d.get("today_done"):
         s = d["today_done"]
@@ -276,14 +318,10 @@ def report_html(d: dict) -> str:
 <div class=hero><h1>Treino</h1><span class=date>{hoje}</span>
   <span class="badge {cls}">{icone} {estado}</span></div>
 
-<div class=painéis>
-  <div class=painel><div class=today>{agora}</div></div>
-  <div class=painel>{flags}{resumo_html}</div>
-</div>
+<div class=today>{agora}</div>
+{flags}
 
-<h2>Estado</h2>
-{LEGENDA}
-<div class=tiles>{"".join(_tile(f) for f in fichas)}</div>
+{estado_html}
 
 <div class=painéis>
   <div class=painel>
