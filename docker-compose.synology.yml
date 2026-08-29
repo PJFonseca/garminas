@@ -1,21 +1,21 @@
 # GarmiNAS for Synology Container Manager.
 #
-# Same as docker-compose.yml with two differences, both because Container
-# Manager has no command line to pass flags to:
+# Paste this into a new Container Manager project and it does the rest: it
+# pulls the published image, starts the three containers, and serves the setup
+# page on port 8090. Nothing to build, nothing to import, no .env file.
 #
-#   1. The language model service has no "profiles" key, so it starts with
-#      everything else. It waits for the model file by itself, printing "à
-#      espera de /models/model.gguf" until the setup page downloads one. That
-#      wait is expected and harmless.
-#   2. No build step. Import the image through Container Manager instead, or
-#      use the main compose file if you have a shell.
+# It differs from docker-compose.yml in two ways, both because Container
+# Manager has no command line to pass flags to: the model service is not behind
+# a compose profile, so it starts with everything else, and there is no build
+# step. It waits for the model file by itself, logging "waiting for
+# /models/model.gguf" until the setup page has downloaded one.
 #
-# Every setting has a default, so no .env file is needed. To change one, edit
-# the value here in the Container Manager editor.
+# Every setting has a value here rather than in a .env. To change the timezone,
+# a memory limit or the port, edit it in the Container Manager editor.
 
 services:
   garmin:
-    image: garminas:1.0
+    image: ghcr.io/pjfonseca/garminas:latest
     container_name: garminas-cron
     hostname: garminas
     restart: unless-stopped
@@ -36,7 +36,7 @@ services:
     networks: [default]
 
   web:
-    image: garminas:1.0
+    image: ghcr.io/pjfonseca/garminas:latest
     container_name: garminas-web
     restart: unless-stopped
     command: ["web"]

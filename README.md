@@ -138,42 +138,30 @@ works too, with more re-authentication.
 
 ## On a Synology, without a terminal
 
-Container Manager can run all of this from DSM, with no SSH and no commands on
-the NAS itself. You need Docker once, on another machine, to produce the image
-file; everything after that is the DSM interface.
+One file, pasted into Container Manager. Nothing to build, nothing to upload,
+no `.env`.
 
-**1. Build the image, once, on a machine with Docker.**
+**1. Make a folder.** In File Station, inside the `docker` shared folder,
+create `garminas`.
 
-```bash
-docker build -t garminas:1.0 .
-docker save -o garminas.tar garminas:1.0
-```
-
-Save it uncompressed: Container Manager reads `.tar`, not `.tar.gz`. The file
-is around 1 GB.
-
-**2. Make a folder on the NAS.** In File Station, inside the `docker` shared
-folder, create `garminas`, and inside it create `data` and `models`. Upload
-`garminas.tar` into `garminas`.
-
-**3. Import the image.** Container Manager, **Image**, **Add**, **Add From
-File**, choose `garminas.tar`. It takes a minute or two and then appears in the
-list as `garminas:1.0`.
-
-**4. Create the project.** Container Manager, **Project**, **Create**.
+**2. Create the project.** Container Manager, **Project**, **Create**.
 
 - Project name: `garminas`
-- Path: the `docker/garminas` folder you made
+- Path: the `docker/garminas` folder you just made
 - Source: **Create docker-compose.yml**, and paste the contents of
-  [`docker-compose.synology.yml`](docker-compose.synology.yml) from this
-  repository into the editor
+  [`docker-compose.synology.yml`](docker-compose.synology.yml) into the editor
 
-Then **Next**, **Next**, **Done**. It starts three containers.
+**Next**, **Next**, **Done**. It pulls the published image and starts three
+containers.
 
-**5. Open the page.** `http://your-nas:8090`. Add a profile, pick a model, give
-your Garmin credentials, and it does the rest.
+**3. Open the page.** `http://your-nas:8090`. Add a profile, choose a model,
+give your Garmin credentials. It downloads the model, logs in through Chrome,
+asks for the two-factor code if Garmin asks for one, pulls your history and
+writes the first report.
 
-The `garminas-llm` container will log `waiting for /models/model.gguf` until the
+That is the whole installation.
+
+The `garminas-llm` container logs `waiting for /models/model.gguf` until the
 setup page has downloaded a model. That is expected: it waits rather than
 crash-looping.
 
@@ -181,15 +169,14 @@ crash-looping.
 
 The Synology compose file differs from the main one in two ways, both because
 Container Manager has no command line to pass flags to: the model service is
-not behind a profile, so it starts with everything else, and there is no build
-step, since the image is imported instead. Every setting has a default, so no
-`.env` file is needed. To change the timezone, the memory limits, or the port,
-edit the values in the Container Manager project editor and restart the
-project.
+not behind a compose profile, so it starts with everything else, and it pulls
+the published image instead of building. To change the timezone, a memory
+limit or the port, edit the value in the Container Manager project editor and
+restart the project.
 
-If your DSM user id and group id are known to you, put them in `PUID` and
-`PGID` so the files under `data/` belong to you rather than to root. It works
-either way.
+If you know your DSM user id and group id, put them in `PUID` and `PGID` so
+the files under `data/` belong to you rather than to root. It works either
+way.
 
 Two containers ask for 2 GB and the model asks for 6, so a DS923+ with the
 stock 4 GB will be tight. With 16 GB there is room for the 12B model, in which
