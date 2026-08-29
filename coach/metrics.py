@@ -342,7 +342,7 @@ def body(con, spec, today: date) -> dict:
     }
 
 
-def sessao_recente(acts: list[dict], ritmos: dict, today: date) -> dict:
+def sessao_recente(acts: list[dict], ritmos: dict, today: date, ln: str = "en") -> dict:
     """Como correu a última sessão, comparada com as anteriores.
 
     Tudo o que é comparação fica feito aqui. O modelo recebe frases prontas e
@@ -363,42 +363,44 @@ def sessao_recente(acts: list[dict], ritmos: dict, today: date) -> dict:
     com_ritmo = [((a["distance_m"] / 1000) / (a["duration_s"] / 3600))
                  for a in anteriores if a["distance_m"] and a["duration_s"]]
 
+    from language import t as _t
+
     notas = []
     if kmh and com_ritmo:
         mais_rapidas = [v for v in com_ritmo if v > kmh]
         if not mais_rapidas:
-            notas.append("foi a tua sessão mais rápida das últimas oito semanas")
-        elif len(mais_rapidas) <= 2:
-            n = len(mais_rapidas)
-            notas.append(f"só {n} {'sessão' if n == 1 else 'sessões'} das últimas oito semanas "
-                         f"{'foi' if n == 1 else 'foram'} mais {'rápida' if n == 1 else 'rápidas'}")
+            notas.append(_t("s.fastest", ln))
+        elif len(mais_rapidas) == 1:
+            notas.append(_t("s.one_faster", ln))
+        elif len(mais_rapidas) == 2:
+            notas.append(_t("s.few_faster", ln, n=2))
         media = sum(com_ritmo) / len(com_ritmo)
         if kmh > media * 1.08:
-            notas.append(f"correste a {kmh:.1f} km/h, acima da tua média recente de {media:.1f}")
+            notas.append(_t("s.above_avg", ln, kmh=f"{kmh:.1f}", media=f"{media:.1f}"))
         elif kmh < media * 0.92:
-            notas.append(f"correste a {kmh:.1f} km/h, abaixo da tua média recente de {media:.1f}")
+            notas.append(_t("s.below_avg", ln, kmh=f"{kmh:.1f}", media=f"{media:.1f}"))
 
     duracoes = [a["duration_s"] / 60 for a in anteriores]
     if duracoes:
         media_min = sum(duracoes) / len(duracoes)
         if minutos > media_min * 1.25:
-            notas.append(f"durou {round(minutos)} minutos, bem mais do que os {round(media_min)} habituais")
+            notas.append(_t("s.longer", ln, min=round(minutos), media=round(media_min)))
         elif minutos < media_min * 0.75:
-            notas.append(f"foi curta, {round(minutos)} minutos contra os {round(media_min)} habituais")
+            notas.append(_t("s.shorter", ln, min=round(minutos), media=round(media_min)))
 
     if ultima["avg_hr"] and ritmos.get("has_data") and kmh:
         if kmh >= ritmos["forte"] - 0.2:
-            notas.append(f"a {kmh:.1f} km/h estiveste no teu terreno forte")
+            notas.append(_t("s.hard_ground", ln, kmh=f"{kmh:.1f}"))
         elif kmh <= ritmos["facil"] + 0.2:
-            notas.append(f"a {kmh:.1f} km/h ficaste em ritmo fácil, que é onde se constrói a base")
+            notas.append(_t("s.easy_ground", ln, kmh=f"{kmh:.1f}"))
 
     hrs = [a["avg_hr"] for a in anteriores if a["avg_hr"]]
     if ultima["avg_hr"] and hrs:
         media_hr = sum(hrs) / len(hrs)
         if ultima["avg_hr"] > media_hr + 8:
-            notas.append(f"a FC média foi {round(ultima['avg_hr'])}, acima das {round(media_hr)} habituais")
+            notas.append(_t("s.hr_high", ln, hr=round(ultima["avg_hr"]), media=round(media_hr)))
         elif ultima["avg_hr"] < media_hr - 8:
-            notas.append(f"a FC média foi {round(ultima['avg_hr'])}, abaixo das {round(media_hr)} habituais")
+            notas.append(_t("s.hr_low", ln, hr=round(ultima["avg_hr"]), media=round(media_hr)))
 
     # O veredicto, para a pessoa não ter de o deduzir dos números. Uma sessão
     # não é boa ou má em absoluto: é boa se serviu para alguma coisa.
@@ -407,15 +409,15 @@ def sessao_recente(acts: list[dict], ritmos: dict, today: date) -> dict:
     facil = bool(kmh and ritmos.get("has_data") and kmh <= ritmos["facil"] + 0.2)
 
     if rapida and longa:
-        estado, veredicto = "forte", "Sessão forte: mais rápida e mais longa do que o teu costume."
+        estado, veredicto = "forte", _t("v.session.strong_long", ln)
     elif rapida:
-        estado, veredicto = "forte", "Bom estímulo: correste acima do teu ritmo habitual."
+        estado, veredicto = "forte", _t("v.session.strong", ln)
     elif longa:
-        estado, veredicto = "boa", "Boa sessão de volume: mais longa do que o teu costume."
+        estado, veredicto = "boa", _t("v.session.volume", ln)
     elif facil:
-        estado, veredicto = "base", "Sessão de base, ao ritmo certo para construir aeróbio."
+        estado, veredicto = "base", _t("v.session.base", ln)
     else:
-        estado, veredicto = "normal", "Sessão dentro do teu normal."
+        estado, veredicto = "normal", _t("v.session.normal", ln)
 
     return {
         "has_data": True,
@@ -433,7 +435,7 @@ def sessao_recente(acts: list[dict], ritmos: dict, today: date) -> dict:
     }
 
 
-def build(con) -> dict:
+def build(con, ln: str = "en") -> dict:
     spec = yaml.safe_load(SCHEMA.read_text())
     today = date.today()
     window = today - timedelta(days=180)
@@ -499,7 +501,7 @@ def build(con) -> dict:
         "recent": recent_sessions(acts),
         "body": body(con, spec.get("weight", {"table": []}), today),
         "paces": paces(acts),
-        "sessao": sessao_recente(acts, paces(acts), today),
+        "sessao": sessao_recente(acts, paces(acts), today, ln),
         "windows": {"7d": summarise_window(acts, today, 7),
                     "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),

@@ -576,7 +576,7 @@ def profile_language() -> str:
 def main() -> None:
     cfg = yaml.safe_load(CATALOGUE.read_text())
     ln = profile_language()
-    m = build(connect())
+    m = build(connect(), ln)
 
     if m["coverage"]["activities"] == 0:
         sys.exit("Sem atividades na base de dados. Correr a sincronização primeiro.")

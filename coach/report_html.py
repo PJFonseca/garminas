@@ -15,6 +15,7 @@ from __future__ import annotations
 from html import escape
 
 from assess import ESTADOS, desporto
+from language import APP
 from language import t as _t
 from figures import CSS as FIG_CSS, exercicios, linha_tempo
 
@@ -46,6 +47,16 @@ CSS = """
 
 .day .desc { font-size:.76rem; color:var(--dim); margin-top:.3rem; line-height:1.4; }
 .today b { font-size:1.05rem; }
+
+/* Como correu a sessão que acabou de ser feita. O cartão existe porque a
+   pergunta "foi bom ou mau?" merece resposta antes do plano de amanhã. */
+.correu { border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem;
+  margin:0 0 1.5rem; background:color-mix(in srgb, var(--fg) 3%, transparent); }
+.correu .rotulo { display:flex; align-items:center; gap:.45rem; font-size:.8rem;
+  text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin-bottom:.5rem; }
+.correu .rotulo b { color:var(--s1); font-size:.95rem; }
+.correu p { margin:0; font-size:1.05rem; line-height:1.55; max-width:68ch; }
+.correu .factos { margin-top:.6rem; font-size:.85rem; color:var(--dim); }
 .today .muted { color:var(--dim); }
 
 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(21rem,1fr)); gap:.8rem; margin:.75rem 0 2rem; }
@@ -183,15 +194,15 @@ def _intensity(load: float, ln: str) -> tuple[str, str]:
     return "rest", _t("int.rest", ln)
 
 
-def _tsb_state(tsb: float) -> tuple[str, str, str]:
-    """Classe, rótulo e ícone. A cor nunca vai sozinha."""
+def _tsb_state(tsb: float, ln: str) -> tuple[str, str, str]:
+    """Class, label and icon. Colour never travels alone."""
     if tsb < -25:
-        return "b-crit", "fadiga acumulada", "▼"
+        return "b-crit", _t("tsb.fadiga", ln), "▼"
     if tsb < -10:
-        return "b-serious", "cansado", "▽"
+        return "b-serious", _t("tsb.cansado", ln), "▽"
     if tsb > 10:
-        return "b-good", "muito fresco", "△"
-    return "b-good", "equilibrado", "●"
+        return "b-good", _t("tsb.fresco", ln), "△"
+    return "b-good", _t("tsb.equilibrio", ln), "●"
 
 
 def _meter(ficha: dict, compacto: bool = False, ln: str = "en") -> str:
@@ -348,7 +359,7 @@ def report_html(d: dict) -> str:
     hoje = d["generated"]
     ln = d.get("language") or "en"
     fichas = d.get("assessment") or []
-    cls, estado, icone = _tsb_state(load["tsb"])
+    cls, estado, icone = _tsb_state(load["tsb"], ln)
 
     # Separar o que pede ação do que só precisa de confirmação. Antes, a mesma
     # informação aparecia três vezes: numa caixa de resumo, nos mosaicos, e
@@ -372,6 +383,25 @@ def report_html(d: dict) -> str:
     objetivo_html = ""
     if (d.get("objetivo") or {}).get("perder_peso"):
         objetivo_html = f'<p class=legend>{_t("ui.weight_goal", ln)}</p>'
+
+    # O comentário à sessão que acabou de ser feita. Estava a ser gerado e
+    # guardado, e nunca chegava ao ecrã.
+    correu_html = ""
+    sessao = (m.get("sessao") or {})
+    comentario = d.get("sessao_comentario")
+    if sessao.get("has_data") and (comentario or sessao.get("veredicto")):
+        factos = []
+        if sessao.get("kmh"):
+            factos.append(f'{sessao["kmh"]} km/h')
+        if sessao.get("avg_hr"):
+            factos.append(f'{sessao["avg_hr"]} bpm')
+        factos.append(f'{_t("ui.load", ln)} {sessao["load"]}')
+        correu_html = (
+            f'<div class=correu><div class=rotulo><b>{escape(APP)}</b> '
+            f'{_t("ui.como_correu", ln)}</div>'
+            f'<p>{escape(comentario or sessao["veredicto"])}</p>'
+            f'<div class=factos>{escape(desporto(sessao["sport"], ln))}, '
+            f'{sessao["minutes"]} min, {" · ".join(factos)}</div></div>')
 
     if d.get("today_done"):
         s = d["today_done"]
@@ -405,6 +435,7 @@ def report_html(d: dict) -> str:
   <span class="badge {cls}">{icone} {estado}</span></div>
 
 <div class=today>{agora}</div>
+{correu_html}
 {_seguir(plan["days"][0], hoje, ln)}
 {flags}
 
