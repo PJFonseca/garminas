@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -59,7 +60,7 @@ def ask_llm(system: str, prompt: str, max_tokens: int = 400) -> str | None:
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.4,
+        "temperature": 0.2,
         "max_tokens": max_tokens,
     }).encode()
 
@@ -72,72 +73,137 @@ def ask_llm(system: str, prompt: str, max_tokens: int = 400) -> str | None:
         return None
 
 
-SYSTEM = "És um treinador conciso e honesto. Escreves em português europeu, sem entusiasmo artificial."
+NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+LIST_MARKER = re.compile(r"(?m)^\s*\d+[.)]\s*")
+
+SYSTEM = ("És um treinador conciso e honesto. Escreves em português europeu, sem "
+          "entusiasmo artificial. Nunca fazes contas: citas apenas números que te "
+          "são dados, copiados tal como aparecem.")
+
+STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos dados "
+            "acima. Reescreve usando exclusivamente os números listados, tal como "
+            "aparecem. Não calcules médias, somas, contagens nem diferenças.")
+
+
+def _numbers(text: str) -> set[str]:
+    out = set()
+    for raw in NUMBER.findall(text):
+        v = raw.replace(",", ".")
+        if "." in v:
+            v = v.rstrip("0").rstrip(".")
+        out.add(v or "0")
+    return out
+
+
+def write(prompt: str, max_tokens: int = 400) -> str | None:
+    """Gera, verifica os números, e insiste uma vez.
+
+    Um 4B conta mal: ao ver dez sessões pede-se-lhe uma leitura e ele responde
+    que houve seis de 75 minutos quando houve três. Por isso tudo o que é
+    contagem vai já calculado no prompt, e o que sair com números que lá não
+    estavam é rejeitado. Num relatório de saúde, texto errado com ar de certeza
+    é pior do que secção nenhuma.
+    """
+    allowed = _numbers(prompt)
+    for attempt in (1, 2):
+        text = ask_llm(SYSTEM, prompt if attempt == 1 else prompt + STRICTER, max_tokens)
+        if text is None:
+            return None
+        invented = _numbers(LIST_MARKER.sub("", text)) - allowed
+        if not invented:
+            return text
+        print(f"tentativa {attempt}: números fora dos dados {sorted(invented)}",
+              file=sys.stderr)
+    return None
+
+
+def describe(label: str, now, base, unit: str = "") -> str:
+    """Diz por palavras se um valor está acima, abaixo ou na base.
+
+    O modelo não é capaz de julgar que 51.6 contra 51.4 é 'praticamente igual';
+    ao ser-lhe entregue apenas os dois números, escreveu 'em declínio'.
+    """
+    if now is None or base is None:
+        return f"{label}: sem dados"
+    rel = abs(now - base) / base if base else 0
+    if rel < 0.03:
+        word = "praticamente igual à base"
+    elif now > base:
+        word = "acima da base"
+    else:
+        word = "abaixo da base"
+    return f"{label} {now}{unit}, base de 28 dias {base}{unit} — {word}"
 
 
 def analyse_training(m: dict, flags: list[str]) -> str | None:
-    """Primeira chamada: leitura do que foi efetivamente treinado."""
-    sessions = "\n".join(
-        f"- {s['date']} {s['sport']}, {s['minutes']} min"
-        + (f", {s['km']} km" if s["km"] else "")
-        + (f", FC média {s['avg_hr']}" if s["avg_hr"] else "")
-        + f", carga {s['load']}"
-        for s in m["recent"][:10]
-    ) or "- nenhuma sessão registada"
+    """Primeira chamada: leitura do que foi efetivamente treinado.
 
-    return ask_llm(SYSTEM, f"""Sessões mais recentes:
-{sessions}
+    A lista de sessões não vai no prompt de propósito. Ela está na tabela do
+    relatório, para a pessoa ler; ao modelo entregam-se só os totais.
+    """
+    w7, w14 = m["windows"]["7d"], m["windows"]["14d"]
+    rec = m["recovery"]
 
-Carga: CTL {m['load']['ctl']}, ATL {m['load']['atl']}, TSB {m['load']['tsb']}
-Últimos 7 dias: {m['load']['sessions_7d']} sessões, {m['load']['minutes_7d']} minutos
-Dias desde a última sessão dura: {m['load']['days_since_hard']}
-Recuperação: FC repouso 7d {m['recovery']['rhr_7d']} contra 28d {m['recovery']['rhr_28d']}, \
-HRV 7d {m['recovery']['hrv_7d']} contra 28d {m['recovery']['hrv_28d']}, \
-sono 7d {m['recovery']['sleep_h_7d']} h
-Bandeiras ativas: {'; '.join(flags) if flags else 'nenhuma'}
+    return write(f"""Totais já calculados. Não contes nem calcules nada, cita-os como estão.
 
-Escreve uma leitura do treino feito nos últimos dias, em português europeu:
-1. O que a distribuição das sessões revela, citando números concretos acima.
-2. Se o equilíbrio entre carga e recuperação está a resultar ou não.
+Últimos 7 dias: {w7['sessions']} sessões, {w7['minutes']} minutos ao todo, {w7['km']} km, média de {w7['mean_min']} minutos por sessão, {w7['hard']} sessões duras, {w7['rest_days']} dias sem treino.
+Últimos 14 dias: {w14['sessions']} sessões, {w14['minutes']} minutos ao todo, {w14['km']} km, média de {w14['mean_min']} minutos por sessão, {w14['hard']} sessões duras, {w14['rest_days']} dias sem treino.
+Sessão mais longa em 14 dias: {w14['longest_min']} minutos. Mais curta: {w14['shortest_min']} minutos.
 
-Máximo 120 palavras. Não inventes números.""")
+Carga de treino: CTL {m['load']['ctl']}, ATL {m['load']['atl']}, TSB {m['load']['tsb']}.
+Dias desde a última sessão dura: {m['load']['days_since_hard']}.
+
+{describe('FC de repouso a 7 dias', rec['rhr_7d'], rec['rhr_28d'], ' bpm')}
+{describe('HRV a 7 dias', rec['hrv_7d'], rec['hrv_28d'])}
+Sono médio a 7 dias: {rec['sleep_h_7d']} horas.
+Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
+
+Escreve duas frases curtas, em português europeu:
+1. O que estes totais dizem sobre o treino das últimas duas semanas.
+2. Se a carga e a recuperação estão em equilíbrio.
+
+Máximo 100 palavras. Usa no máximo três números, todos retirados da lista acima.""")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
     """Segunda chamada: 30 dias e justificação do plano já calculado."""
     month = m["month"]
     weeks = "\n".join(
-        f"- semana de {w['start']}: {w['sessions']} sessões, {w['minutes']} min, carga {w['load']}"
+        f"- semana de {w['start']}: {w['sessions']} sessões, {w['minutes']} minutos, "
+        f"{w['km']} km, carga {w['load']} (carga é um índice, não minutos)"
         for w in reversed(month["weeks"])
     )
+    hard_days = [d["date"] for d in plan["days"] if d["load_est"] >= 85]
+    rest_days = [d["date"] for d in plan["days"] if d["id"] == "rest"]
     days = "\n".join(
         f"- {d['date']} ({d['weekday']}): {d['name']}"
-        + (f", {d['duration_min']} min" if d["duration_min"] else "")
+        + (f", {d['duration_min']} minutos" if d["duration_min"] else "")
         for d in plan["days"]
     )
     s = plan["summary"]
 
-    return ask_llm(SYSTEM, f"""Últimas quatro semanas:
+    return write(f"""Últimas quatro semanas, já calculadas:
 {weeks}
 
-Taxa de progressão da última semana face às anteriores: {month['ramp']}
-Sessões duras em 28 dias: {month['hard_sessions']}. Dias sem treino: {month['rest_days']}.
-Sessão mais longa: {month['longest_min']} min, {month['longest_km']} km.
-Bandeiras ativas hoje: {'; '.join(flags) if flags else 'nenhuma'}
+Progressão da última semana face à média das anteriores: {month['ramp']} (acima de 1.3 é risco de lesão, abaixo de 0.8 é perda de forma).
+Em 28 dias: {month['hard_sessions']} sessões duras e {month['rest_days']} dias sem treino.
+Sessão mais longa do período: {month['longest_min']} minutos, {month['longest_km']} km.
+Bandeiras de recuperação ativas hoje: {'; '.join(flags) if flags else 'nenhuma'}.
 
-Plano já calculado para os próximos {len(plan['days'])} dias, que deves explicar
-e não alterar:
+Plano já calculado para os próximos {len(plan['days'])} dias, que deves explicar e
+não alterar:
 {days}
 
-O plano dá {s['sessions']} sessões, {s['hard']} delas duras, {s['minutes']} minutos
-no total, e leva o CTL de {s['ctl_start']} para {s['ctl_end']}.
+Dias do plano com sessão dura: {', '.join(hard_days) if hard_days else 'nenhum'}.
+Dias do plano sem treino: {', '.join(rest_days) if rest_days else 'nenhum'}.
+No total: {s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos, e o CTL passa de {s['ctl_start']} para {s['ctl_end']}.
 
 Escreve, em português europeu:
-1. O que os últimos 30 dias mostram como tendência, com um número concreto.
-2. Porque é que o plano acima faz sentido face a essa tendência, em duas ou três frases.
-3. Um sinal concreto que obrigue a abrandar o plano.
+1. A tendência das últimas quatro semanas. Se falares de média semanal, usa
+   {month['mean_week_load']} de carga — os outros valores são semanas isoladas.
+2. Porque é que o plano acima faz sentido face a essa tendência, em duas frases.
 
-Máximo 160 palavras. Não inventes sessões que não estejam na lista.""", max_tokens=520)
+Máximo 100 palavras. Não menciones dias nem sessões que não estejam nas listas acima.""", max_tokens=520)
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
@@ -146,8 +212,24 @@ def table(header: list[str], rows: list[list]) -> list[str]:
            ["| " + " | ".join("—" if c is None else str(c) for c in r) + " |" for r in rows]
 
 
+def slow_down_rule(rules: dict) -> str:
+    """A regra de travagem sai dos limiares, não do modelo.
+
+    Pedida ao modelo, a resposta saía circular — numa execução, 'o sinal para
+    abrandar é a ausência de bandeiras de recuperação'. Os números estão no
+    workouts.yaml e não têm de ser adivinhados.
+    """
+    return (f"Abranda o plano se acontecer qualquer uma destas: a FC de repouso a "
+            f"7 dias subir mais de {rules['rhr_delta_above']} bpm acima da base de 28 "
+            f"dias, o HRV cair mais de {abs(rules['hrv_drop_pct_below'])}% abaixo da "
+            f"base, o sono a 7 dias descer abaixo de {rules['sleep_h_below']} h, ou o "
+            f"TSB passar abaixo de {rules['tsb_below']}. Qualquer delas corta o "
+            f"catálogo às sessões de recuperação no relatório seguinte. Dor, tonturas "
+            f"ou sono partido valem por si, sem esperar por números.")
+
+
 def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
-           review: str | None) -> str:
+           review: str | None, rules: dict) -> str:
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
@@ -181,7 +263,9 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += [""]
 
     lines += ["## Análise", ""]
-    lines += [analysis or "_Modelo indisponível: esta secção precisa dele. Os números acima estão completos._"]
+    lines += [analysis or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
+              "continha números que não estão nos dados e foi rejeitado. "
+              "Os números e o plano acima são calculados e mantêm-se válidos._"]
     lines += [""]
 
     lines += ["## Últimos 30 dias", ""]
@@ -207,8 +291,11 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   f"TSB no fim {s['tsb_end']}.", ""]
 
     lines += ["## Recomendação", ""]
-    lines += [review or "_Modelo indisponível: o plano acima foi calculado à mesma e é válido._"]
+    lines += [review or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
+              "continha números que não estão nos dados e foi rejeitado. "
+              "Os números e o plano acima são calculados e mantêm-se válidos._"]
 
+    lines += ["", "### Quando abrandar", "", slow_down_rule(rules), ""]
     lines += ["", "---", "",
               "Orientação genérica gerada a partir dos teus próprios dados. "
               "Não substitui acompanhamento clínico ou de um treinador, "
@@ -230,7 +317,7 @@ def main() -> None:
     review = review_and_recommend(m, plan, flags)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    report = render(m, flags, plan, analysis, review)
+    report = render(m, flags, plan, analysis, review, cfg['recovery_flags'])
     (OUT_DIR / f"{date.today().isoformat()}.md").write_text(report)
     (OUT_DIR / "latest.md").write_text(report)
     print(report)

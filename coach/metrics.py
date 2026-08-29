@@ -162,6 +162,23 @@ def mean(values) -> float | None:
     return round(sum(values) / len(values), 1) if values else None
 
 
+def summarise_window(acts: list[dict], today: date, days: int) -> dict:
+    """Resumo fechado de uma janela. Existe para que o modelo não tenha de
+    contar nada: recebe os totais já feitos e limita-se a citá-los."""
+    block = [a for a in acts if a["date"] >= today - timedelta(days=days - 1)]
+    minutes = [a["duration_s"] / 60 for a in block]
+    return {
+        "sessions": len(block),
+        "minutes": round(sum(minutes)),
+        "mean_min": round(sum(minutes) / len(minutes)) if minutes else 0,
+        "longest_min": round(max(minutes)) if minutes else 0,
+        "shortest_min": round(min(minutes)) if minutes else 0,
+        "km": round(sum(a["distance_m"] for a in block) / 1000, 1),
+        "hard": len([a for a in block if a["load"] >= 100]),
+        "rest_days": days - len({a["date"] for a in block}),
+    }
+
+
 def recent_sessions(acts: list[dict], n: int = 12) -> list[dict]:
     """As últimas n sessões, da mais recente para a mais antiga."""
     return [{
@@ -195,6 +212,7 @@ def month_review(acts: list[dict], today: date) -> dict:
             "load": round(sum(a["load"] for a in block)),
         })
 
+    loads = [w["load"] for w in weeks]
     previous = [w["load"] for w in weeks[1:] if w["load"] > 0]
     ramp = round(weeks[0]["load"] / (sum(previous) / len(previous)), 2) if previous else None
 
@@ -203,6 +221,8 @@ def month_review(acts: list[dict], today: date) -> dict:
     return {
         "weeks": weeks,
         "ramp": ramp,
+        "mean_week_load": round(sum(loads) / len(loads)) if loads else 0,
+        "mean_week_minutes": round(sum(w["minutes"] for w in weeks) / len(weeks)) if weeks else 0,
         "hard_sessions": len([a for a in last28 if a["load"] >= 100]),
         "rest_days": 28 - len({a["date"] for a in last28}),
         "longest_km": round(max((a["distance_m"] for a in runs), default=0) / 1000, 1),
@@ -270,6 +290,8 @@ def build(con) -> dict:
         },
         "by_sport_28d": by_sport,
         "recent": recent_sessions(acts),
+        "windows": {"7d": summarise_window(acts, today, 7),
+                    "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),
         "coverage": {
             "activities": len(acts),
