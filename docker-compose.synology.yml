@@ -10,6 +10,10 @@
 # step. It waits for the model file by itself, logging "waiting for
 # /models/model.gguf" until the setup page has downloaded one.
 #
+# The :z on the volumes relabels them for SELinux, which Fedora and RHEL
+# enforce and DSM does not. It is ignored where there is no SELinux, so it
+# costs nothing here and saves anyone who runs this file on a Linux box.
+#
 # Every setting has a value here rather than in a .env. To change the timezone,
 # a memory limit or the port, edit it in the Container Manager editor.
 
@@ -31,8 +35,8 @@ services:
       PUID: ""
       PGID: ""
     volumes:
-      - ./data:/data
-      - ./models:/models
+      - ./data:/data:z
+      - ./models:/models:z
     networks: [default]
 
   web:
@@ -53,8 +57,8 @@ services:
     ports:
       - "8090:8090"
     volumes:
-      - ./data:/data
-      - ./models:/models
+      - ./data:/data:z
+      - ./models:/models:z
     networks: [default]
 
   llm:
@@ -76,7 +80,7 @@ services:
         --threads 4
         --n-predict 512
     volumes:
-      - ./models:/models:ro
+      - ./models:/models:ro,z
     # A 4B model needs about 4 GB. Raise to 12g for the 12B, if the NAS has it.
     mem_limit: 6g
     networks: [default]

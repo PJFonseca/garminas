@@ -134,7 +134,7 @@ def download(model: dict, on_progress=None) -> bool:
     part = TARGET.with_suffix(".gguf.part")
     done = part.stat().st_size if part.exists() else 0
 
-    req = urllib.request.Request(model["url"], headers={"User-Agent": "garmin-nas/1.0"})
+    req = urllib.request.Request(model["url"], headers={"User-Agent": "GarmiNAS/1.0"})
     if done:
         print(f"A retomar em {human(done / 1048576)}.")
         req.add_header("Range", f"bytes={done}-")

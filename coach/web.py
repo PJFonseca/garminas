@@ -193,6 +193,7 @@ def can_view(p: dict) -> bool:
 
 
 def password_hash(password_field: str) -> str:
+    # O prefixo fica como está: mudá-lo invalidaria as senhas já guardadas.
     return hashlib.sha256(("garmin-nas:" + password_field).encode()).hexdigest()
 
 
@@ -766,7 +767,7 @@ def report_for(person: dict, day: str | None):
     else:
         fallback = reports / f"{stem}.md"
         if not fallback.exists():
-            return page("garmin-nas", "<h1>Relatório não encontrado</h1>"), 404
+            return page(APP, f'<h1>{_t("ui.no_reports", ln)}</h1>'), 404
         body = markdown.markdown(fallback.read_text(), extensions=["tables"])
         body = body.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
 
@@ -797,6 +798,7 @@ def new_profile():
 
 
 def setup_form() -> str:
+    ln = request_language()
     options = "".join(
         f'''<label class=model><input type=radio name=model value="{m['id']}"
               {'checked' if i == 0 else ''}>
@@ -815,9 +817,9 @@ def setup_form() -> str:
   <label class=model><input type=radio name=model value=""><span><b>Nenhum</b>
     <span class=note>Relatório só com números, tabelas e plano.</span></span></label>"""
 
-    return page("Novo perfil, garmin-nas", f"""
+    return page(f'{_t("ui.add", ln)}, {APP}', f"""
 {'<nav><a href="/">Voltar</a></nav>' if ja_ha else ''}
-<h1>{'Adicionar perfil' if ja_ha else 'garmin-nas'}</h1>
+<h1>{_t("ui.add", ln) if ja_ha else APP}</h1>
 <p class=sub>{'Cada person entra com a sua própria conta Garmin.'
               if ja_ha else 'Dá os acessos da Garmin e arranca.'}</p>
 
@@ -948,5 +950,5 @@ if __name__ == "__main__":
     profiles.PROFILES.mkdir(parents=True, exist_ok=True)
     if moved:
         print(f"instalação antiga arrumada no perfil '{moved}'", flush=True)
-    print(f"garmin-nas: http://{HOST}:{PORT}", flush=True)
+    print(f"{APP}: http://{HOST}:{PORT}", flush=True)
     app.run(host=HOST, port=PORT, threaded=True)

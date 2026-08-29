@@ -141,8 +141,13 @@ works too, with more re-authentication.
 One file, pasted into Container Manager. Nothing to build, nothing to upload,
 no `.env`.
 
-**1. Make a folder.** In File Station, inside the `docker` shared folder,
-create `garminas`.
+**1. Make the folders.** In File Station, inside the `docker` shared folder,
+create `garminas`, and inside it create `data` and `models`.
+
+Create them yourself rather than letting Docker do it. Docker will create
+missing folders on first start, but as root, and then File Station cannot
+manage them: you would not be able to browse the reports or delete anything
+without a shell.
 
 **2. Create the project.** Container Manager, **Project**, **Create**.
 
