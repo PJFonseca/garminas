@@ -244,6 +244,9 @@ def build(con) -> dict:
 
     ctl = ewma_load(acts, today, 90, CTL_TC)
     atl = ewma_load(acts, today, 28, ATL_TC)
+    # A mesma média há quatro semanas, para se saber se a forma sobe ou desce.
+    # O valor absoluto do CTL não diz nada sem saber para onde vai.
+    ctl_prev = ewma_load(acts, today - timedelta(days=28), 90, CTL_TC)
 
     def recent(series, n):
         return [series[today - timedelta(days=i)] for i in range(n) if today - timedelta(days=i) in series]
@@ -271,6 +274,8 @@ def build(con) -> dict:
         "generated": today.isoformat(),
         "load": {
             "ctl": round(ctl, 1),
+            "ctl_28d_ago": round(ctl_prev, 1),
+            "ctl_delta": round(ctl - ctl_prev, 1),
             "atl": round(atl, 1),
             "tsb": round(ctl - atl, 1),
             "sessions_7d": len(last7),

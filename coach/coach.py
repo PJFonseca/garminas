@@ -30,6 +30,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 from metrics import build, connect  # noqa: E402
+from assess import ESTADOS, assess  # noqa: E402
 from plan import build_plan, eligible  # noqa: E402
 
 CATALOGUE = Path(__file__).with_name("workouts.yaml")
@@ -115,6 +116,22 @@ def write(prompt: str, max_tokens: int = 400) -> str | None:
         print(f"tentativa {attempt}: números fora dos dados {sorted(invented)}",
               file=sys.stderr)
     return None
+
+
+def ramp_verdict(ramp) -> str:
+    """Diz o que a progressão significa, em vez de deixar o modelo comparar.
+
+    Entregue apenas o número e a regra, o modelo escreveu que 0.65 estava
+    'dentro do intervalo seguro (acima de 0.8 é perda de forma)' — a
+    conclusão oposta ao que os seus próprios dados diziam.
+    """
+    if ramp is None:
+        return "sem semanas anteriores suficientes para comparar"
+    if ramp > 1.3:
+        return f"{ramp}, acima de 1.3: subida rápida de mais, território de lesão"
+    if ramp < 0.8:
+        return f"{ramp}, abaixo de 0.8: a semana passada ficou aquém, está a perder forma"
+    return f"{ramp}, entre 0.8 e 1.3: progressão saudável"
 
 
 def describe(label: str, now, base, unit: str = "") -> str:
@@ -236,17 +253,12 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines = [f"# Treino — {m['generated']}", ""]
 
     lines += ["## Estado", ""]
-    lines += table(["Métrica", "Valor"], [
-        ["CTL (forma de fundo)", load["ctl"]],
-        ["ATL (fadiga recente)", load["atl"]],
-        ["TSB (frescura)", load["tsb"]],
-        ["Sessões / minutos, 7 dias", f"{load['sessions_7d']} / {load['minutes_7d']}"],
-        ["Dias desde sessão dura", load["days_since_hard"]],
-        ["FC repouso 7d vs 28d", f"{rec['rhr_7d']} vs {rec['rhr_28d']}"],
-        ["HRV 7d vs 28d", f"{rec['hrv_7d']} vs {rec['hrv_28d']}"],
-        ["Sono médio 7d", f"{rec['sleep_h_7d']} h"],
-    ])
-    lines += [""]
+    lines += table(["Métrica", "Valor", "Leitura", "Porquê"],
+                   [[f["titulo"], f"{f['valor']} {f['unidade']}".strip(),
+                     ESTADOS[f["estado"]][2], f["leitura"]]
+                    for f in assess(m)])
+    lines += ["", f"ATL (fadiga recente) {load['atl']}, "
+                  f"{load['sessions_7d']} sessões nos últimos 7 dias.", ""]
 
     if flags:
         lines += ["## Bandeiras de recuperação", ""]
@@ -272,14 +284,21 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += table(["Semana de", "Sessões", "Minutos", "km", "Carga"],
                    [[w["start"], w["sessions"], w["minutes"], w["km"], w["load"]]
                     for w in reversed(month["weeks"])])
-    lines += ["", f"Progressão da última semana face às anteriores: **{month['ramp']}** "
-                  f"(acima de 1.3 é território de lesão, abaixo de 0.8 é perda de forma). "
-                  f"{month['hard_sessions']} sessões duras, {month['rest_days']} dias sem treino, "
+    duras = month["hard_sessions"]
+    lines += ["", f"Progressão: **{ramp_verdict(month['ramp'])}**. "
+                  f"{duras} {'sessão dura' if duras == 1 else 'sessões duras'}, "
+                  f"{month['rest_days']} dias sem treino, "
                   f"sessão mais longa {month['longest_min']} min.", ""]
 
-    lines += ["## Hoje", "",
-              f"**{today['name']}**"
-              + (f" — {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
+    feito_hoje = next((s for s in m["recent"] if s["date"] == m["generated"]), None)
+    lines += ["## Hoje", ""]
+    if feito_hoje:
+        lines += [f"Já treinaste: **{feito_hoje['sport']}**, {feito_hoje['minutes']} min"
+                  + (f", {feito_hoje['km']} km" if feito_hoje["km"] else "")
+                  + f", carga {feito_hoje['load']}. O plano abaixo começa amanhã.", ""]
+    else:
+        lines += [f"**{today['name']}**"
+                  + (f" — {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
 
     s = plan["summary"]
     lines += [f"## Plano — próximos {len(plan['days'])} dias", ""]
@@ -311,15 +330,36 @@ def main() -> None:
         sys.exit("Sem atividades na base de dados. Correr a sincronização primeiro.")
 
     flags = check_flags(m, cfg["recovery_flags"])
-    plan = build_plan(m, cfg["workouts"], bool(flags), PLAN_DAYS)
+    ja_treinou_hoje = any(s["date"] == m["generated"] for s in m["recent"])
+    plan = build_plan(m, cfg["workouts"], bool(flags), PLAN_DAYS,
+                      skip_today=ja_treinou_hoje)
 
     analysis = analyse_training(m, flags)
     review = review_and_recommend(m, plan, flags)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    report = render(m, flags, plan, analysis, review, cfg['recovery_flags'])
-    (OUT_DIR / f"{date.today().isoformat()}.md").write_text(report)
+    report = render(m, flags, plan, analysis, review, cfg["recovery_flags"])
+    stamp = date.today().isoformat()
+    (OUT_DIR / f"{stamp}.md").write_text(report)
     (OUT_DIR / "latest.md").write_text(report)
+
+    # O mesmo relatório em dados, para a página web o desenhar como quiser.
+    # O markdown continua a ser a versão canónica, legível no terminal e por
+    # um assistente; o JSON evita que a web tenha de o voltar a interpretar.
+    payload = {
+        "generated": m["generated"],
+        "metrics": m,
+        "plan": plan,
+        "flags": flags,
+        "analysis": analysis,
+        "review": review,
+        "ramp_verdict": ramp_verdict(m["month"]["ramp"]),
+        "slow_down": slow_down_rule(cfg["recovery_flags"]),
+        "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
+        "assessment": assess(m),
+    }
+    for name in (f"{stamp}.json", "latest.json"):
+        (OUT_DIR / name).write_text(json.dumps(payload, ensure_ascii=False, indent=1))
     print(report)
 
 

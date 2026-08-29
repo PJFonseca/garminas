@@ -63,7 +63,8 @@ def _pick(by_id: dict, allowed: set[str], order: list[str]) -> dict | None:
     return next((by_id[i] for i in order if i in allowed and i in by_id), None)
 
 
-def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14) -> dict:
+def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
+               skip_today: bool = False) -> dict:
     """Devolve o plano dia a dia mais um resumo do que ele provoca na carga."""
     by_id = {w["id"]: w for w in catalogue}
     load = m["load"]
@@ -71,14 +72,22 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14) ->
     dsh = load["days_since_hard"]
 
     a_ctl, a_atl = 2 / (CTL_TC + 1), 2 / (ATL_TC + 1)
-    week_minutes_cap = max(round(load["minutes_7d"] * RAMP_CAP), 90)
+
+    # O tecto semanal sai do maior entre a última semana e a média do mês. Só
+    # com a última semana, uma semana de descanso passaria a ser o novo normal
+    # e o plano seguinte encolhia para quase nada — visto acontecer: 111
+    # minutos numa semana leve davam um tecto de 122, e o plano saía com oito
+    # dias de descanso em catorze.
+    base_minutes = max(load["minutes_7d"], m.get("month", {}).get("mean_week_minutes", 0))
+    week_minutes_cap = max(round(base_minutes * RAMP_CAP), 120)
 
     plan, quality_week, minutes_week = [], 0, 0
     today = date.today()
 
-    for offset in range(days):
+    first = 1 if skip_today else 0
+    for offset in range(first, first + days):
         day = today + timedelta(days=offset)
-        if offset and offset % 7 == 0:           # nova semana do plano
+        if offset > first and (offset - first) % 7 == 0:   # nova semana do plano
             quality_week, minutes_week = 0, 0
 
         tsb = ctl - atl

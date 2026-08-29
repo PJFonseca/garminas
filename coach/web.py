@@ -12,6 +12,7 @@ Depois de configurado, a mesma página passa a mostrar o relatório do dia.
 
 from __future__ import annotations
 
+import json
 import os
 import pty
 import re
@@ -29,6 +30,7 @@ from flask import Flask, jsonify, redirect, request
 sys.path.insert(0, str(Path(__file__).parent))
 from setup import CATALOGUE, META, TARGET, human  # noqa: E402
 from setup import download as download_model  # noqa: E402
+from report_html import CSS as VIZ_CSS, report_html  # noqa: E402
 
 DATA = Path(os.environ.get("GARMIN_DATA_DIR", "/data"))
 REPORTS = DATA / "reports"
@@ -346,7 +348,7 @@ pre#log { background:color-mix(in srgb, var(--fg) 5%, transparent); border:1px s
 nav { display:flex; gap:1rem; font-size:.9rem; margin-bottom:1.5rem; }
 nav a { color:var(--accent); text-decoration:none; }
 hr { border:0; border-top:1px solid var(--line); margin:2rem 0; }
-"""
+""" + VIZ_CSS
 
 SHELL = """<!doctype html><html lang=pt><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -483,16 +485,24 @@ def report(day: str | None = None):
                     "<p><a href=/configurar>Configurar →</a></p>")
 
     days = sorted((f.stem for f in REPORTS.glob("*.md") if f.stem != "latest"), reverse=True)
-    target = REPORTS / f"{day}.md" if day else REPORTS / "latest.md"
-    if not target.exists():
-        return page("garmin-nas", "<h1>Relatório não encontrado</h1>"), 404
+    stem = day or "latest"
 
-    html = markdown.markdown(target.read_text(), extensions=["tables"])
-    html = html.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
+    # Preferir os dados; o markdown fica como recurso para relatórios antigos,
+    # escritos antes de o JSON existir.
+    structured = REPORTS / f"{stem}.json"
+    if structured.exists():
+        corpo = report_html(json.loads(structured.read_text()))
+    else:
+        fallback = REPORTS / f"{stem}.md"
+        if not fallback.exists():
+            return page("garmin-nas", "<h1>Relatório não encontrado</h1>"), 404
+        corpo = markdown.markdown(fallback.read_text(), extensions=["tables"])
+        corpo = corpo.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
+
     older = " · ".join(f'<a href="/relatorio/{d}">{d}</a>' for d in days[:14])
     return page("Treino — garmin-nas",
-                f'<nav><a href="/configurar">Configurar</a></nav>{html}'
-                f'<hr><h3>Anteriores</h3><p class=sub>{older or "nenhum"}</p>')
+                f'<nav><a href="/configurar">Configurar</a></nav>{corpo}'
+                f'<hr><h3>Anteriores</h3><p class=legend>{older or "nenhum"}</p>')
 
 
 @app.get("/configurar")
