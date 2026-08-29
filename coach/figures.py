@@ -122,7 +122,7 @@ def linha_tempo(estrutura: list, ln: str = "en") -> str:
     for p in passos:
         if p["tipo"] not in usados:
             usados.append(p["tipo"])
-    legenda = "".join(f'<span class=l-{u}>{_t("tl." + u, ln)}</span>' for u in usados)
+    legenda = "".join(f'<span class=l-{u}>{_t("tl." + {"facil":"easy","forte":"hard","andar":"walking"}.get(u, u), ln)}</span>' for u in usados)
     return (f'<div class=tl>{barras}</div>'
             f'<div class=tl-leg>{legenda}<span style="margin-left:auto">'
             f'{_t("tl.total", ln, n=round(total))}</span></div>')

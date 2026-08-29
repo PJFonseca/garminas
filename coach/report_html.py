@@ -172,15 +172,15 @@ dialog::backdrop { background:rgba(0,0,0,.55); }
   color:var(--dim); font-size:1.6rem; cursor:pointer; line-height:1; }
 """ + FIG_CSS
 
-INTENSITY = [(85, "duro", "int.dura"), (50, "med", "int.moderada"),
-             (1, "leve", "int.leve"), (0, "rest", "int.descanso")]
+INTENSITY = [(85, "duro", "int.hard"), (50, "med", "int.moderate"),
+             (1, "leve", "int.easy"), (0, "rest", "int.rest")]
 
 
 def _intensity(load: float, ln: str) -> tuple[str, str]:
     for limit, css, chave in INTENSITY:
         if load >= limit:
             return css, _t(chave, ln)
-    return "rest", _t("int.descanso", ln)
+    return "rest", _t("int.rest", ln)
 
 
 def _tsb_state(tsb: float) -> tuple[str, str, str]:
@@ -247,11 +247,11 @@ def _tile(ficha: dict, ln: str) -> str:
 
 
 def _legenda(ln: str) -> str:
-    pares = [("good", "●", "estado.bom"), ("warning", "◐", "estado.atencao"),
-             ("serious", "◑", "estado.cuidado"), ("critical", "▲", "estado.alerta")]
+    pares = [("good", "●", "state.good"), ("warning", "◐", "state.watch"),
+             ("serious", "◑", "state.fix"), ("critical", "▲", "state.alert")]
     itens = "".join(f'<span class=e-{c}><b class=dot>{i}</b> {_t(k, ln)}</span>'
                     for c, i, k in pares)
-    return f'<div class=key>{itens}<span>{_t("ui.ordenado", ln)}</span></div>'
+    return f'<div class=key>{itens}<span>{_t("ui.sorted_by", ln)}</span></div>'
 
 
 def _chart(weeks: list[dict], ln: str) -> str:
@@ -271,7 +271,7 @@ def _chart(weeks: list[dict], ln: str) -> str:
     # Linha da média: sem ela, "319" e "134" são só dois números altos.
     media = round(sum(w["load"] for w in ordered) / len(ordered)) if ordered else 0
     marca = (f'<div class=media style="bottom:{round(media / top * 100)}%">'
-             f'<span>{_t("ui.media", ln, n=media)}</span></div>') if media else ""
+             f'<span>{_t("ui.average", ln, n=media)}</span></div>') if media else ""
     return (f'<div class=plot><div class=chart>{"".join(cols)}</div>{marca}</div>'
             f'<div class=axis>{"".join(axis)}</div>')
 
@@ -280,7 +280,7 @@ def _plan(days: list[dict], hoje: str, ln: str) -> str:
     cards = []
     for d in days:
         css, label = _intensity(d["load_est"], ln)
-        minutos = f'{d["duration_min"]} min' if d["duration_min"] else _t("ui.sem_treino", ln)
+        minutos = f'{d["duration_min"]} min' if d["duration_min"] else _t("ui.no_training", ln)
         cards.append(
             f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}" '
             f'data-dia="{d["date"]}" role=button tabindex=0>'
@@ -290,7 +290,7 @@ def _plan(days: list[dict], hoje: str, ln: str) -> str:
             f'<div class=m>{minutos}</div>'
             + (f'<div class=ritmo>{escape(d["ritmo"])}</div>' if d.get("ritmo") else "")
             + f'<div class=desc>{escape(d.get("description", ""))}</div>'
-            + f'<div class=ver>{_t("ui.ver_sessao", ln)}</div></div>')
+            + f'<div class=ver>{_t("ui.see_session", ln)}</div></div>')
     return f'<div class=plan>{"".join(cards)}</div>{"".join(_modal(x, ln) for x in days)}'
 
 
@@ -312,7 +312,7 @@ def _modal(d: dict, ln: str) -> str:
     if d.get("exercicios"):
         partes.append(exercicios(d["exercicios"], ln))
     if d.get("motivo"):
-        partes.append(f'<p class=porque>{_t("ui.porque_esta", ln)}: {escape(d["motivo"])}</p>')
+        partes.append(f'<p class=porque>{_t("ui.why_this", ln)}: {escape(d["motivo"])}</p>')
     return (f'<dialog id="dia-{d["date"]}"><div class=modal>'
             f'<button class=fechar aria-label=Fechar>&times;</button>'
             f'{"".join(partes)}</div></dialog>')
@@ -320,7 +320,7 @@ def _modal(d: dict, ln: str) -> str:
 
 def _prose(text: str | None, ln: str) -> str:
     if not text:
-        return f'<p class=legend>{_t("ui.sem_texto", ln)}</p>'
+        return f'<p class=legend>{_t("ui.no_text", ln)}</p>'
     blocos = [f"<p>{escape(b.strip())}</p>" for b in text.split("\n") if b.strip()]
     return f'<div class=prose>{"".join(blocos)}</div>'
 
@@ -332,8 +332,8 @@ def _seguir(dia: dict, hoje: str, ln: str) -> str:
     fazer: a que ritmo, com que intervalos, quanto tempo a aquecer. A
     descrição estava no catálogo desde o início e nunca chegava ao ecrã.
     """
-    quando = (_t("ui.hoje", ln) if dia["date"] == hoje
-              else f'{_t("ui.amanha", ln)}, {dia["weekday"]}')
+    quando = (_t("ui.today", ln) if dia["date"] == hoje
+              else f'{_t("ui.tomorrow", ln)}, {dia["weekday"]}')
     dur = f' <span class=dur>{dia["duration_min"]} min</span>' if dia["duration_min"] else ""
     como = f'<p class=como>{escape(dia.get("description", ""))}</p>' if dia.get("description") else ""
     ritmo = f'<p class=ritmo>{escape(dia["ritmo"])}</p>' if dia.get("ritmo") else ""
@@ -358,27 +358,27 @@ def report_html(d: dict) -> str:
 
     if problemas:
         estado_html = (
-            f'<h2>{_t("ui.a_corrigir", ln)} <span class=conta>'
-            f'{_t("ui.de", ln, n=len(problemas), total=len(fichas))}</span></h2>'
+            f'<h2>{_t("ui.needs_attention", ln)} <span class=conta>'
+            f'{_t("ui.of", ln, n=len(problemas), total=len(fichas))}</span></h2>'
             f'{_legenda(ln)}<div class=tiles>{"".join(_tile(f, ln) for f in problemas)}</div>')
     else:
-        estado_html = (f'<h2>{_t("ui.tudo_bem", ln)}</h2>'
-                       f'<p class=legend>{_t("ui.tudo_bem_sub", ln)}</p>')
+        estado_html = (f'<h2>{_t("ui.all_good", ln)}</h2>'
+                       f'<p class=legend>{_t("ui.all_good_sub", ln)}</p>')
     if calmas:
         estado_html += (
-            f'<h2>{_t("ui.normal", ln)} <span class=conta>{len(calmas)}</span></h2>'
+            f'<h2>{_t("ui.within_normal", ln)} <span class=conta>{len(calmas)}</span></h2>'
             f'<div class=calmas>{"".join(_linha(f, ln) for f in calmas)}</div>')
 
     objetivo_html = ""
     if (d.get("objetivo") or {}).get("perder_peso"):
-        objetivo_html = f'<p class=legend>{_t("ui.objetivo_peso", ln)}</p>'
+        objetivo_html = f'<p class=legend>{_t("ui.weight_goal", ln)}</p>'
 
     if d.get("today_done"):
         s = d["today_done"]
         km = f', {s["km"]} km' if s["km"] else ""
-        agora = (f'<b>{_t("ui.ja_treinaste", ln)}</b> {escape(desporto(s["sport"], ln))}, '
-                 f'{s["minutes"]} min{km}, {_t("ui.carga", ln)} {s["load"]}. '
-                 f'<span class=muted>{_t("ui.plano_amanha", ln)}</span>')
+        agora = (f'<b>{_t("ui.already_trained", ln)}</b> {escape(desporto(s["sport"], ln))}, '
+                 f'{s["minutes"]} min{km}, {_t("ui.load", ln)} {s["load"]}. '
+                 f'<span class=muted>{_t("ui.plan_tomorrow", ln)}</span>')
     else:
         p0 = plan["days"][0]
         dur = f', {p0["duration_min"]} min' if p0["duration_min"] else ""
@@ -387,8 +387,8 @@ def report_html(d: dict) -> str:
     flags = ""
     if d["flags"]:
         itens = "".join(f"<li>{escape(f)}</li>" for f in d["flags"])
-        flags = (f'<div class=callout><h3>⚠ {_t("ui.bandeiras", ln)}</h3><ul>{itens}</ul>'
-                 f'<p class=legend>{_t("ui.bandeiras_sub", ln)}</p></div>')
+        flags = (f'<div class=callout><h3>⚠ {_t("ui.flags", ln)}</h3><ul>{itens}</ul>'
+                 f'<p class=legend>{_t("ui.flags_sub", ln)}</p></div>')
 
     sessoes = "".join(
         f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"], ln))}</td>'
@@ -398,10 +398,10 @@ def report_html(d: dict) -> str:
 
     resumo = plan["summary"]
     n_duras = month["hard_sessions"]
-    duras_txt = (_t("ui.sessao_dura", ln) if n_duras == 1
-                 else _t("ui.sessoes_duras", ln, n=n_duras))
+    duras_txt = (_t("ui.one_hard", ln) if n_duras == 1
+                 else _t("ui.n_hard", ln, n=n_duras))
     return f"""<div class=viz>
-<div class=hero><h1>{_t("ui.treino", ln)}</h1><span class=date>{hoje}</span>
+<div class=hero><h1>{_t("ui.training", ln)}</h1><span class=date>{hoje}</span>
   <span class="badge {cls}">{icone} {estado}</span></div>
 
 <div class=today>{agora}</div>
@@ -412,43 +412,43 @@ def report_html(d: dict) -> str:
 
 <div class=painéis>
   <div class=painel>
-    <h2>{_t("ui.analise", ln)}</h2>
+    <h2>{_t("ui.analysis", ln)}</h2>
     {_prose(d.get("analysis"), ln)}
   </div>
   <div class=painel>
-    <h2>{_t("ui.carga_semana", ln)}</h2>
+    <h2>{_t("ui.weekly_load", ln)}</h2>
     {_chart(month["weeks"], ln)}
-    <p class=legend>{_t("ui.progressao", ln)}: <b>{escape(d["ramp_verdict"])}</b>.
-      {_t("ui.resumo_28d", ln, duras=duras_txt, descanso=month["rest_days"],
+    <p class=legend>{_t("ui.ramp", ln)}: <b>{escape(d["ramp_verdict"])}</b>.
+      {_t("ui.summary_28d", ln, duras=duras_txt, descanso=month["rest_days"],
           longa=month["longest_min"])}</p>
   </div>
 </div>
 
-<h2>{_t("ui.plano", ln, n=len(plan["days"]))}</h2>
+<h2>{_t("ui.plan", ln, n=len(plan["days"]))}</h2>
 {_plan(plan["days"], hoje, ln)}
-<p class=legend>{_t("ui.resumo_plano", ln, s=resumo["sessions"], h=resumo["hard"],
+<p class=legend>{_t("ui.plan_summary", ln, s=resumo["sessions"], h=resumo["hard"],
                     min=resumo["minutes"], a=resumo["ctl_start"], b=resumo["ctl_end"],
                     tsb=resumo["tsb_end"])}</p>
 {objetivo_html}
 
 <div class=painéis>
   <div class=painel>
-    <h2>{_t("ui.recomendacao", ln)}</h2>
+    <h2>{_t("ui.recommendation", ln)}</h2>
     {_prose(d.get("review"), ln)}
-    <h3>{_t("ui.quando_abrandar", ln)}</h3>
+    <h3>{_t("ui.when_to_ease", ln)}</h3>
     <p class=legend>{escape(d["slow_down"])}</p>
   </div>
   <div class=painel>
-    <h2>{_t("ui.recentes", ln)}</h2>
+    <h2>{_t("ui.recent", ln)}</h2>
     <div class=wrap><table>
-      <tr><th>{_t("th.data", ln)}</th><th>{_t("th.desporto", ln)}</th>
+      <tr><th>{_t("th.date", ln)}</th><th>{_t("th.sport", ln)}</th>
           <th class=num>{_t("th.min", ln)}</th><th class=num>{_t("th.km", ln)}</th>
-          <th class=num>{_t("th.fc", ln)}</th><th class=num>{_t("th.carga", ln)}</th></tr>
+          <th class=num>{_t("th.hr", ln)}</th><th class=num>{_t("th.load", ln)}</th></tr>
       {sessoes}
     </table></div>
   </div>
 </div>
 
 <hr>
-<p class=legend>{_t("ui.aviso", ln)}</p>
+<p class=legend>{_t("ui.disclaimer", ln)}</p>
 </div>"""

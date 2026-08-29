@@ -299,12 +299,12 @@ def ramp_verdict(ramp, ln: str = "en") -> str:
     conclusão oposta ao que os seus próprios dados diziam.
     """
     if ramp is None:
-        return _t("v.ramp.sem", ln)
+        return _t("v.ramp.none", ln)
     if ramp > 1.3:
-        return _t("v.ramp.alerta", ln, r=ramp)
+        return _t("v.ramp.alert", ln, r=ramp)
     if ramp < 0.8:
-        return _t("v.ramp.leve", ln, r=ramp)
-    return _t("v.ramp.bom", ln, r=ramp)
+        return _t("v.ramp.light", ln, r=ramp)
+    return _t("v.ramp.good", ln, r=ramp)
 
 
 def describe(label: str, now, base, unit: str = "") -> str:
@@ -456,7 +456,7 @@ def slow_down_rule(rules: dict, ln: str = "en") -> str:
     abrandar é a ausência de bandeiras de recuperação'. Os números estão no
     workouts.yaml e não têm de ser adivinhados.
     """
-    return _t("v.abrandar", ln, rhr=rules["rhr_delta_above"],
+    return _t("v.ease_off", ln, rhr=rules["rhr_delta_above"],
               hrv=abs(rules["hrv_drop_pct_below"]), sono=rules["sleep_h_below"],
               tsb=rules["tsb_below"])
 
@@ -467,11 +467,11 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
-    lines = [f"# {_t('ui.treino', ln)}, {m['generated']}", ""]
+    lines = [f"# {_t('ui.training', ln)}, {m['generated']}", ""]
 
-    lines += [f"## {_t('md.estado', ln)}", ""]
-    lines += table([_t("md.metrica", ln), _t("md.valor", ln),
-                    _t("md.leitura", ln), _t("md.porque_col", ln)],
+    lines += [f"## {_t('md.status', ln)}", ""]
+    lines += table([_t("md.metric", ln), _t("md.value", ln),
+                    _t("md.reading", ln), _t("md.why_col", ln)],
                    [[f["titulo"], f"{f['valor']} {f['unidade']}".strip(),
                      f.get("rotulo") or "", f["leitura"]]
                     for f in assess(m, ln)])
@@ -482,25 +482,25 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
         lines += [f"- {f}" for f in flags]
         lines += ["", "Enquanto durarem, só ficam elegíveis sessões de recuperação.", ""]
 
-    lines += [f"## {_t('ui.recentes', ln)}", ""]
+    lines += [f"## {_t('ui.recent', ln)}", ""]
     if m["recent"]:
-        lines += table([_t("th.data", ln), _t("th.desporto", ln), _t("th.min", ln),
-                        _t("th.km", ln), _t("th.fc", ln), _t("th.carga", ln)],
+        lines += table([_t("th.date", ln), _t("th.sport", ln), _t("th.min", ln),
+                        _t("th.km", ln), _t("th.hr", ln), _t("th.load", ln)],
                        [[s["date"], desporto(s["sport"], ln), s["minutes"], s["km"] or None,
                          s["avg_hr"], s["load"]] for s in m["recent"]])
     else:
         lines += ["Sem sessões registadas."]
     lines += [""]
 
-    lines += [f"## {_t('ui.analise', ln)}", ""]
+    lines += [f"## {_t('ui.analysis', ln)}", ""]
     lines += [analysis or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
               "continha números que não estão nos dados e foi rejeitado. "
               "Os números e o plano acima são calculados e mantêm-se válidos._"]
     lines += [""]
 
-    lines += [f"## {_t('ui.carga_semana', ln)}", ""]
-    lines += table([_t("th.semana", ln), _t("th.sessoes", ln), _t("th.minutos", ln),
-                    _t("th.km", ln), _t("th.carga", ln)],
+    lines += [f"## {_t('ui.weekly_load', ln)}", ""]
+    lines += table([_t("th.week", ln), _t("th.sessions", ln), _t("th.minutes", ln),
+                    _t("th.km", ln), _t("th.load", ln)],
                    [[w["start"], w["sessions"], w["minutes"], w["km"], w["load"]]
                     for w in reversed(month["weeks"])])
     duras = month["hard_sessions"]
@@ -511,9 +511,9 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
 
     feito_hoje = next((s for s in m["recent"] if s["date"] == m["generated"]), None)
     seguinte = plan["days"][0]
-    quando = (_t("ui.hoje", ln) if seguinte["date"] == m["generated"]
-              else f"{_t('ui.amanha', ln)}, {seguinte['weekday']}")
-    lines += [f"## {_t('md.a_seguir', ln, quando=quando, data=seguinte['date'])}", "",
+    quando = (_t("ui.today", ln) if seguinte["date"] == m["generated"]
+              else f"{_t('ui.tomorrow', ln)}, {seguinte['weekday']}")
+    lines += [f"## {_t('md.next_up', ln, quando=quando, data=seguinte['date'])}", "",
               f"**{seguinte['name']}**"
               + (f", {seguinte['duration_min']} min" if seguinte["duration_min"] else "") + "", ""]
     if seguinte.get("ritmo"):
@@ -521,11 +521,11 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     if seguinte.get("description"):
         lines += [seguinte["description"], ""]
     if seguinte.get("motivo"):
-        lines += [_t("md.porque", ln, motivo=seguinte["motivo"]), ""]
+        lines += [_t("md.why", ln, motivo=seguinte["motivo"]), ""]
 
-    lines += [f"## {_t('ui.hoje', ln)}", ""]
+    lines += [f"## {_t('ui.today', ln)}", ""]
     if feito_hoje:
-        lines += [_t("md.ja_treinaste", ln, desporto=desporto(feito_hoje["sport"], ln),
+        lines += [_t("md.already_trained", ln, desporto=desporto(feito_hoje["sport"], ln),
                      min=feito_hoje["minutes"],
                      km=f", {feito_hoje['km']} km" if feito_hoje["km"] else "",
                      carga=feito_hoje["load"]), ""]
@@ -534,9 +534,9 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   + (f", {today['duration_min']} min" if today["duration_min"] else "") + ".", ""]
 
     s = plan["summary"]
-    lines += [f"## {_t('ui.plano', ln, n=len(plan['days']))}", ""]
-    lines += table([_t("th.data", ln), _t("md.dia", ln), _t("md.sessao", ln),
-                    _t("th.min", ln), _t("md.tsb_proj", ln)],
+    lines += [f"## {_t('ui.plan', ln, n=len(plan['days']))}", ""]
+    lines += table([_t("th.date", ln), _t("md.day", ln), _t("md.session", ln),
+                    _t("th.min", ln), _t("md.tsb_projected", ln)],
                    [[d["date"], d["weekday"], d["name"], d["duration_min"], d["tsb_after"]]
                     for d in plan["days"]])
     lines += ["", f"{s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos. "
@@ -548,12 +548,12 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   "O treino ajuda, mas a diferença maior vem da alimentação, que este relatório "
                   "não vê.", ""]
 
-    lines += [f"## {_t('ui.recomendacao', ln)}", ""]
+    lines += [f"## {_t('ui.recommendation', ln)}", ""]
     lines += [review or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
               "continha números que não estão nos dados e foi rejeitado. "
               "Os números e o plano acima são calculados e mantêm-se válidos._"]
 
-    lines += ["", f"### {_t('ui.quando_abrandar', ln)}", "", slow_down_rule(rules, ln), ""]
+    lines += ["", f"### {_t('ui.when_to_ease', ln)}", "", slow_down_rule(rules, ln), ""]
     lines += ["", "---", "",
               "Orientação genérica gerada a partir dos teus próprios dados. "
               "Não substitui acompanhamento clínico ou de um treinador, "
@@ -561,7 +561,7 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     return "\n".join(lines)
 
 
-def idioma_do_perfil() -> str:
+def profile_language() -> str:
     """A língua sai do perfil; COACH_LANG serve para testar."""
     if os.environ.get("COACH_LANG"):
         return pick(os.environ["COACH_LANG"])
@@ -575,7 +575,7 @@ def idioma_do_perfil() -> str:
 
 def main() -> None:
     cfg = yaml.safe_load(CATALOGUE.read_text())
-    ln = idioma_do_perfil()
+    ln = profile_language()
     m = build(connect())
 
     if m["coverage"]["activities"] == 0:
@@ -610,7 +610,7 @@ def main() -> None:
         "review": review,
         "ramp_verdict": ramp_verdict(m["month"]["ramp"], ln),
         "slow_down": slow_down_rule(cfg["recovery_flags"], ln),
-        "idioma": ln,
+        "language": ln,
         "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
         "assessment": assess(m, ln),
         "sessao_comentario": sessao,

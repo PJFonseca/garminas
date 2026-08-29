@@ -19,10 +19,10 @@ from __future__ import annotations
 from language import t
 
 ESTADOS = {
-    "bom":     ("good",     "●", "estado.bom"),
-    "atencao": ("warning",  "◐", "estado.atencao"),
-    "cuidado": ("serious",  "◑", "estado.cuidado"),
-    "alerta":  ("critical", "▲", "estado.alerta"),
+    "bom":     ("good",     "●", "state.good"),
+    "atencao": ("warning",  "◐", "state.watch"),
+    "cuidado": ("serious",  "◑", "state.fix"),
+    "alerta":  ("critical", "▲", "state.alert"),
 }
 
 
@@ -65,16 +65,16 @@ def escala(minimo: float, maximo: float, zonas: list, valor) -> dict | None:
 
 def tsb(value: float, ln: str) -> dict:
     if value < -25:
-        e, l = "alerta", t("l.tsb.alerta", ln)
+        e, l = "alerta", t("l.tsb.alert", ln)
     elif value < -10:
-        e, l = "atencao", t("l.tsb.atencao", ln)
+        e, l = "atencao", t("l.tsb.watch", ln)
     elif value <= 5:
-        e, l = "bom", t("l.tsb.equilibrio", ln)
+        e, l = "bom", t("l.tsb.balanced", ln)
     elif value <= 25:
-        e, l = "bom", t("l.tsb.fresco", ln)
+        e, l = "bom", t("l.tsb.fresh", ln)
     else:
-        e, l = "cuidado", t("l.tsb.parado", ln)
-    acao = "" if e == "bom" else t("ac.tsb.descansar" if value < -10 else "ac.tsb.treinar", ln)
+        e, l = "cuidado", t("l.tsb.idle", ln)
+    acao = "" if e == "bom" else t("ac.tsb.rest" if value < -10 else "ac.tsb.train", ln)
     return _v("tsb", t("m.tsb", ln), value, "", e, l, t("g.tsb", ln),
               escala(-40, 30, [(-25, "alerta"), (-10, "atencao"), (5, "bom"),
                                (25, "bom"), (30, "cuidado")], value),
@@ -83,13 +83,13 @@ def tsb(value: float, ln: str) -> dict:
 
 def ctl(value: float, delta: float, ln: str) -> dict:
     if delta > 2:
-        e, l = "bom", t("l.ctl.sobe", ln, delta=f"{delta:+.1f}")
+        e, l = "bom", t("l.ctl.up", ln, delta=f"{delta:+.1f}")
     elif delta >= -1:
-        e, l = "bom", t("l.ctl.estavel", ln)
+        e, l = "bom", t("l.ctl.flat", ln)
     elif delta >= -4:
-        e, l = "atencao", t("l.ctl.desce", ln, delta=f"{delta:.1f}")
+        e, l = "atencao", t("l.ctl.down", ln, delta=f"{delta:.1f}")
     else:
-        e, l = "cuidado", t("l.ctl.cai", ln, delta=f"{delta:.1f}")
+        e, l = "cuidado", t("l.ctl.falling", ln, delta=f"{delta:.1f}")
     return _v("ctl", t("m.ctl", ln), value, "", e, l,
               t("g.ctl", ln, antes=round(value - delta, 1)),
               escala(-8, 8, [(-4, "cuidado"), (-1, "atencao"), (2, "bom"), (8, "bom")], delta),
@@ -98,16 +98,16 @@ def ctl(value: float, delta: float, ln: str) -> dict:
 
 def rhr(now, base, ln: str) -> dict:
     if now is None or base is None:
-        return _v("rhr", t("m.rhr", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
+        return _v("rhr", t("m.rhr", ln), t("g.no_data", ln), "", "bom", t("g.no_data", ln))
     d = now - base
     if d > 5:
-        e, l = "alerta", t("l.rhr.alto", ln, d=f"{d:+.1f}")
+        e, l = "alerta", t("l.rhr.high", ln, d=f"{d:+.1f}")
     elif d > 2:
-        e, l = "cuidado", t("l.rhr.medio", ln, d=f"{d:+.1f}")
+        e, l = "cuidado", t("l.rhr.mid", ln, d=f"{d:+.1f}")
     elif d >= -1:
         e, l = "bom", t("l.rhr.normal", ln)
     else:
-        e, l = "bom", t("l.rhr.baixo", ln, d=f"{d:.1f}")
+        e, l = "bom", t("l.rhr.low", ln, d=f"{d:.1f}")
     return _v("rhr", t("m.rhr", ln), now, "bpm", e, l,
               t("g.base", ln, base=base, delta=f"{d:+.1f} bpm"),
               escala(-4, 8, [(-1, "bom"), (2, "bom"), (5, "cuidado"), (8, "alerta")], d),
@@ -116,16 +116,16 @@ def rhr(now, base, ln: str) -> dict:
 
 def hrv(now, base, ln: str) -> dict:
     if now is None or base is None:
-        return _v("hrv", t("m.hrv", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
+        return _v("hrv", t("m.hrv", ln), t("g.no_data", ln), "", "bom", t("g.no_data", ln))
     pct = (now - base) / base * 100 if base else 0
     if pct < -12:
-        e, l = "alerta", t("l.hrv.alerta", ln, pct=f"{pct:.0f}")
+        e, l = "alerta", t("l.hrv.alert", ln, pct=f"{pct:.0f}")
     elif pct < -5:
-        e, l = "cuidado", t("l.hrv.baixo", ln, pct=f"{pct:.0f}")
+        e, l = "cuidado", t("l.hrv.low", ln, pct=f"{pct:.0f}")
     elif pct <= 5:
         e, l = "bom", t("l.hrv.normal", ln)
     else:
-        e, l = "bom", t("l.hrv.alto", ln, pct=f"{pct:+.0f}%")
+        e, l = "bom", t("l.hrv.high", ln, pct=f"{pct:+.0f}%")
     return _v("hrv", t("m.hrv", ln), now, "", e, l,
               t("g.base", ln, base=base, delta=f"{pct:+.0f}%"),
               escala(-25, 15, [(-12, "alerta"), (-5, "cuidado"), (5, "bom"), (15, "bom")], pct),
@@ -134,34 +134,34 @@ def hrv(now, base, ln: str) -> dict:
 
 def sleep(hours, ln: str) -> dict:
     if hours is None:
-        return _v("sono", t("m.sono", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
+        return _v("sono", t("m.sleep", ln), t("g.no_data", ln), "", "bom", t("g.no_data", ln))
     if hours < 6:
-        e, l = "alerta", t("l.sono.alerta", ln)
+        e, l = "alerta", t("l.sleep.alert", ln)
     elif hours < 6.5:
-        e, l = "cuidado", t("l.sono.curto", ln)
+        e, l = "cuidado", t("l.sleep.short", ln)
     elif hours < 7:
-        e, l = "atencao", t("l.sono.aceitavel", ln)
+        e, l = "atencao", t("l.sleep.ok", ln)
     else:
-        e, l = "bom", t("l.sono.bom", ln)
-    return _v("sono", t("m.sono", ln), hours, "h", e, l, t("g.sono", ln),
+        e, l = "bom", t("l.sleep.good", ln)
+    return _v("sono", t("m.sleep", ln), hours, "h", e, l, t("g.sleep", ln),
               escala(4, 9, [(6, "alerta"), (6.5, "cuidado"), (7, "atencao"), (9, "bom")], hours),
-              t("a.sono", ln), "" if e == "bom" else t("ac.sono", ln))
+              t("a.sleep", ln), "" if e == "bom" else t("ac.sleep", ln))
 
 
 def ramp(value, ln: str) -> dict:
     if value is None:
-        return _v("ramp", t("m.ramp", ln), t("g.sem_dados", ln), "", "bom", t("g.sem_dados", ln))
+        return _v("ramp", t("m.ramp", ln), t("g.no_data", ln), "", "bom", t("g.no_data", ln))
     if value > 1.5:
-        e, l = "alerta", t("l.ramp.alerta", ln)
+        e, l = "alerta", t("l.ramp.alert", ln)
     elif value > 1.3:
-        e, l = "cuidado", t("l.ramp.alto", ln)
+        e, l = "cuidado", t("l.ramp.high", ln)
     elif value >= 0.8:
-        e, l = "bom", t("l.ramp.bom", ln)
+        e, l = "bom", t("l.ramp.good", ln)
     elif value >= 0.5:
-        e, l = "atencao", t("l.ramp.leve", ln)
+        e, l = "atencao", t("l.ramp.light", ln)
     else:
-        e, l = "cuidado", t("l.ramp.muito_leve", ln)
-    acao = "" if e == "bom" else t("ac.ramp.subir" if value < 0.8 else "ac.ramp.segurar", ln)
+        e, l = "cuidado", t("l.ramp.very_light", ln)
+    acao = "" if e == "bom" else t("ac.ramp.raise" if value < 0.8 else "ac.ramp.hold", ln)
     return _v("ramp", t("m.ramp", ln), value, "", e, l, t("g.ramp", ln),
               escala(0, 2, [(0.5, "cuidado"), (0.8, "atencao"), (1.3, "bom"),
                             (1.5, "cuidado"), (2, "alerta")], value),
@@ -170,16 +170,16 @@ def ramp(value, ln: str) -> dict:
 
 def days_since_hard(days, ln: str) -> dict:
     if days is None:
-        return _v("dsh", t("m.dsh", ln), t("g.sem_dados", ln), "", "atencao", t("l.dsh.nenhuma", ln))
+        return _v("dsh", t("m.dsh", ln), t("g.no_data", ln), "", "atencao", t("l.dsh.none", ln))
     if days > 21:
-        e, l = "cuidado", t("l.dsh.muito", ln)
+        e, l = "cuidado", t("l.dsh.long", ln)
     elif days > 14:
-        e, l = "atencao", t("l.dsh.algum", ln)
+        e, l = "atencao", t("l.dsh.some", ln)
     elif days < 2:
-        e, l = "atencao", t("l.dsh.recente", ln)
+        e, l = "atencao", t("l.dsh.recent", ln)
     else:
-        e, l = "bom", t("l.dsh.bom", ln)
-    acao = "" if e == "bom" else t("ac.dsh.meter" if days > 14 else "ac.dsh.esperar", ln)
+        e, l = "bom", t("l.dsh.good", ln)
+    acao = "" if e == "bom" else t("ac.dsh.add" if days > 14 else "ac.dsh.wait", ln)
     return _v("dsh", t("m.dsh", ln), days, "d", e, l, t("g.dsh", ln),
               escala(0, 25, [(2, "atencao"), (14, "bom"), (21, "atencao"), (25, "cuidado")], days),
               t("a.dsh", ln), acao)
@@ -187,15 +187,15 @@ def days_since_hard(days, ln: str) -> dict:
 
 def volume(minutes_7d, mean_week_minutes, ln: str) -> dict:
     if not mean_week_minutes:
-        return _v("vol", t("m.vol", ln), minutes_7d, "min", "bom", t("l.vol.sem_base", ln))
+        return _v("vol", t("m.vol", ln), minutes_7d, "min", "bom", t("l.vol.no_base", ln))
     razao = minutes_7d / mean_week_minutes
     if razao < 0.6:
-        e, l = "atencao", t("l.vol.baixo", ln, media=mean_week_minutes)
+        e, l = "atencao", t("l.vol.low", ln, media=mean_week_minutes)
     elif razao > 1.4:
-        e, l = "cuidado", t("l.vol.alto", ln, media=mean_week_minutes)
+        e, l = "cuidado", t("l.vol.high", ln, media=mean_week_minutes)
     else:
-        e, l = "bom", t("l.vol.bom", ln, media=mean_week_minutes)
-    acao = "" if e == "bom" else t("ac.vol.falta" if razao < 1 else "ac.vol.demais", ln)
+        e, l = "bom", t("l.vol.good", ln, media=mean_week_minutes)
+    acao = "" if e == "bom" else t("ac.vol.short" if razao < 1 else "ac.vol.heavy", ln)
     return _v("vol", t("m.vol", ln), minutes_7d, "min", e, l,
               t("g.vol", ln, media=mean_week_minutes),
               escala(0, 2, [(0.6, "atencao"), (1.4, "bom"), (2, "cuidado")], razao),
@@ -212,35 +212,35 @@ def peso(b: dict, ln: str, alvo=(-0.75, -0.25)) -> dict | None:
         return None
 
     kg, velhos = b["kg"], b["days_old"]
-    gloss = t("g.peso", ln, data=b["date"])
+    gloss = t("g.weight", ln, data=b["date"])
     if b.get("bmi"):
         gloss += f", IMC {b['bmi']}" if ln == "pt" else f", BMI {b['bmi']}"
 
     if velhos > 21:
-        return _v("peso", t("m.peso", ln), kg, "kg", "atencao",
-                  t("l.peso.velho", ln, dias=velhos), gloss, None, "",
-                  t("ac.peso.pesar", ln))
+        return _v("peso", t("m.weight", ln), kg, "kg", "atencao",
+                  t("l.weight.stale", ln, dias=velhos), gloss, None, "",
+                  t("ac.weight.weigh", ln))
 
     ritmo = b.get("kg_per_week")
     if ritmo is None:
-        return _v("peso", t("m.peso", ln), kg, "kg", "atencao",
-                  t("l.peso.poucas", ln), gloss, None, "", t("ac.peso.pesar_mais", ln))
+        return _v("peso", t("m.weight", ln), kg, "kg", "atencao",
+                  t("l.weight.few", ln), gloss, None, "", t("ac.weight.weigh_weekly", ln))
 
     pct = ritmo / kg * 100 if kg else 0
     baixo, alto = alvo
     if pct < baixo * 1.5:
-        e, l, acao = "cuidado", t("l.peso.rapido", ln, kg=f"{abs(ritmo):.2f}"), t("ac.peso.comer", ln)
+        e, l, acao = "cuidado", t("l.weight.fast", ln, kg=f"{abs(ritmo):.2f}"), t("ac.weight.eat", ln)
     elif pct <= alto:
-        e, l, acao = "bom", t("l.peso.certo", ln, kg=f"{abs(ritmo):.2f}"), ""
+        e, l, acao = "bom", t("l.weight.right", ln, kg=f"{abs(ritmo):.2f}"), ""
     elif pct <= 0.1:
-        e, l, acao = "atencao", t("l.peso.estavel", ln), t("ac.peso.mesa", ln)
+        e, l, acao = "atencao", t("l.weight.flat", ln), t("ac.weight.kitchen", ln)
     else:
-        e, l, acao = "cuidado", t("l.peso.sobe", ln, kg=f"{ritmo:.2f}"), t("ac.peso.olhar", ln)
+        e, l, acao = "cuidado", t("l.weight.up", ln, kg=f"{ritmo:.2f}"), t("ac.weight.food", ln)
 
-    return _v("peso", t("m.peso", ln), kg, "kg", e, l, gloss,
+    return _v("peso", t("m.weight", ln), kg, "kg", e, l, gloss,
               escala(-1.2, 0.6, [(baixo * 1.5, "cuidado"), (alto, "bom"),
                                  (0.1, "atencao"), (0.6, "cuidado")], ritmo),
-              t("a.peso", ln, min=f"{abs(alto) * kg / 100:.2f}", max=f"{abs(baixo) * kg / 100:.2f}"),
+              t("a.weight", ln, min=f"{abs(alto) * kg / 100:.2f}", max=f"{abs(baixo) * kg / 100:.2f}"),
               acao)
 
 

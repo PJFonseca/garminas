@@ -132,12 +132,14 @@ class SyncProgress:
 
 # Nomes internos das fases e o que a person lê.
 PHASES = {
-    "parado": "A começar",
-    "modelo": "A descarregar o modelo de linguagem",
-    "garmin": "A ligar à Garmin e a puxar o histórico",
-    "relatório": "A escrever o primeiro relatório",
-    "pronto": "Pronto",
-    "erro": "Falhou",
+    "parado": ("A começar", "Starting"),
+    "modelo": ("A descarregar o modelo de linguagem", "Downloading the language model"),
+    "garmin": ("A ligar à Garmin e a puxar o histórico",
+               "Connecting to Garmin and pulling the history"),
+    "a_atualizar": ("A ir buscar os treinos novos", "Fetching new sessions"),
+    "relatório": ("A escrever o relatório", "Writing the report"),
+    "pronto": ("Pronto", "Done"),
+    "erro": ("Falhou", "Failed"),
 }
 
 app = Flask(__name__)
@@ -225,13 +227,24 @@ class Job:
     def snapshot(self) -> dict:
         with self.lock:
             return {
-                "phase": PHASES.get(self.phase, self.phase),
+                "phase": _phase_name(self.phase),
                 "needs_mfa": self.needs_mfa, "error": self.error,
                 "done": self.done, "running": self.running,
                 "progress": self.progress, "step": self.step,
                 "eta": self._eta(), "slug": self.slug,
                 "log": self.log[-40:],
             }
+
+
+def _phase_name(key: str) -> str:
+    """The phase name in the interface language of whoever is looking."""
+    pair = PHASES.get(key)
+    if not pair:
+        return key
+    try:
+        return pair[0] if request_language() == "pt" else pair[1]
+    except RuntimeError:                      # outside a request
+        return pair[1]
 
 
 job = Job()
@@ -451,6 +464,8 @@ nav a { text-decoration:none; }
 nav .avatar { width:1.6rem; height:1.6rem; border-radius:50%; object-fit:cover; }
 nav { align-items:center; }
 nav b { margin-right:auto; }
+nav form.inline { display:inline; margin:0; }
+button.pequeno { margin:0; padding:.3rem .8rem; font-size:.85rem; border-radius:99px; }
 hr { border:0; border-top:1px solid var(--line); margin:2rem 0; }
 """ + VIZ_CSS
 
@@ -502,10 +517,10 @@ def home():
     ln = request_language()
     cards.append(f'<a class="person nova" href="/new">'
                    f'<span class=iniciais>+</span>'
-                   f'<span class=nome>{_t("ui.adicionar", ln)}</span></a>')
+                   f'<span class=nome>{_t("ui.add", ln)}</span></a>')
     return page(APP, f"""
-<h1>{_t("ui.quem", ln)}</h1>
-<p class=sub>{_t("ui.quem_sub", ln)}</p>
+<h1>{_t("ui.who", ln)}</h1>
+<p class=sub>{_t("ui.who_sub", ln)}</p>
 <div class=people>{"".join(cards)}</div>""")
 
 
@@ -527,7 +542,7 @@ def profile_page(slug: str, day: str | None = None):
     ln = pick(person.get("language"))
     if not can_view(person):
         return page(f'{person["first"]}, {APP}', f"""
-<nav><a href="/">{_t("ui.voltar", ln)}</a></nav>
+<nav><a href="/">{_t("ui.back", ln)}</a></nav>
 <h1>{escape(person["first"])}</h1>
 <p class=sub>Este perfil está protegido.</p>
 <form method=post action="/login/{slug}">
@@ -559,9 +574,9 @@ def report_for(person: dict, day: str | None):
     folder = Path(person["dir"])
     reports = folder / "reports"
     if not reports.exists():
-        return page(APP, f'<nav><a href="/">{_t("ui.voltar", ln)}</a></nav>'
-                    f'<h1>{_t("ui.sem_relatorios", ln)}</h1>'
-                    f'<p class=sub>{_t("ui.sem_relatorios_sub", ln, nome=escape(person["first"]))}'
+        return page(APP, f'<nav><a href="/">{_t("ui.back", ln)}</a></nav>'
+                    f'<h1>{_t("ui.no_reports", ln)}</h1>'
+                    f'<p class=sub>{_t("ui.no_reports_sub", ln, nome=escape(person["first"]))}'
                     f'</p>')
 
     days_list = sorted((f.stem for f in reports.glob("*.md") if f.stem != "latest"), reverse=True)
@@ -581,11 +596,13 @@ def report_for(person: dict, day: str | None):
         f'<a class="{"today_str" if d == today_str else ""}" href="/p/{person["slug"]}/{d}">'
         f'{d}{" (today_str)" if d == today_str else ""}</a>' for d in days_list[:14])
     portrait = (f'<img class=avatar src="/photo/{person["slug"]}" alt="">' if person["photo"] else "")
-    sair = f'<a href=/logout>{_t("ui.sair", ln)}</a>' if person["has_password"] else ""
+    sair = f'<a href=/logout>{_t("ui.logout", ln)}</a>' if person["has_password"] else ""
+    update = (f'<form method=post action="/refresh/{person["slug"]}" class=inline>'
+              f'<button class=pequeno type=submit>{_t("ui.update_now", ln)}</button></form>')
     return page(f'{person["first"]}, {APP}',
                 f'<nav>{portrait}<b>{escape(person["name"])}</b>'
-                f'<a href="/">{_t("ui.trocar", ln)}</a>'
-                f'<a href="/new">{_t("ui.adicionar", ln)}</a>{sair}</nav>{body}'
+                f'{update}<a href="/">{_t("ui.switch", ln)}</a>'
+                f'<a href="/new">{_t("ui.add", ln)}</a>{sair}</nav>{body}'
                 f'<hr><h3>{_t("ui.previous", ln)}</h3>'
                 f'<div class=previous>{previous or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',
                 MODAL_JS, wide=True)
@@ -676,20 +693,20 @@ def start():
 @app.get("/progress")
 def progress_page():
     ln = request_language()
-    return page(f'{_t("ui.a_configurar", ln)}, {APP}', f"""
-<h1>{_t("ui.a_configurar", ln)}</h1>
-<p class=sub id=phase>{_t("ui.comecar", ln)}…</p>
+    return page(f'{_t("ui.setting_up", ln)}, {APP}', f"""
+<h1>{_t("ui.setting_up", ln)}</h1>
+<p class=sub id=phase>{_t("ui.starting", ln)}…</p>
 <div class=bar><i id=bar></i></div>
 <p class=sub id=step></p>
 <div id=mfa hidden>
-  <h2>{_t("ui.codigo", ln)}</h2>
-  <p class=note-box>{_t("ui.codigo_sub", ln)}</p>
+  <h2>{_t("ui.code", ln)}</h2>
+  <p class=note-box>{_t("ui.code_sub", ln)}</p>
   <input type=text id=code inputmode=numeric autocomplete=one-time-code>
-  <button id=sendcode type=button>{_t("ui.enviar_codigo", ln)}</button>
+  <button id=sendcode type=button>{_t("ui.send_code", ln)}</button>
 </div>
-<h2>{_t("ui.registo", ln)}</h2>
-<pre id=log>{_t("ui.aguardar", ln)}…</pre>
-<p id=finished hidden><a id=verlink href=/>{_t("ui.ver_relatorio", ln)}</a></p>
+<h2>{_t("ui.log", ln)}</h2>
+<pre id=log>{_t("ui.waiting", ln)}…</pre>
+<p id=finished hidden><a id=verlink href=/>{_t("ui.see_report", ln)}</a></p>
 """, """<script>
 const $ = s => document.querySelector(s);
 async function tick() {
