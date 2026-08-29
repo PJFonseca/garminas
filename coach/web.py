@@ -322,6 +322,50 @@ def save_credentials(folder: Path, email: str, password: str) -> None:
     env.chmod(0o600)
 
 
+def refresh_work(folder: Path) -> None:
+    """Fetches whatever is new and rewrites the report, on demand.
+
+    The same path the nightly cron takes, minus the full history. The
+    credentials already sit in the profile's own .env, so the upstream tool
+    picks them up by itself and nothing needs asking. Someone who has just
+    finished a session should not have to wait until tomorrow to read about it.
+    """
+    try:
+        with job.lock:
+            job.running, job.phase, job.progress = True, "a_atualizar", None
+            job.sync, job.started = SyncProgress(), time.time()
+        job.say("Looking for new sessions.")
+
+        lockfile = folder / ".sync.lock"
+        if lockfile.exists():
+            raise RuntimeError("a sync is already running for this profile")
+        lockfile.touch()
+        try:
+            ok = run_streaming(["xvfb-run", "-a", "garmin-givemydata"],
+                               {"GARMIN_DATA_DIR": str(folder)}, mfa_ok=True, track=True)
+        finally:
+            lockfile.unlink(missing_ok=True)
+        if not ok:
+            raise RuntimeError("the sync failed, see the log above")
+
+        with job.lock:
+            job.phase, job.progress = "relatório", None
+        if not run_streaming([sys.executable, "/opt/coach/coach.py"],
+                             {"GARMIN_DATA_DIR": str(folder)}):
+            raise RuntimeError("the report failed")
+
+        with job.lock:
+            job.phase, job.done, job.slug = "pronto", True, folder.name
+        job.say("Done.")
+    except Exception as exc:                     # noqa: BLE001
+        with job.lock:
+            job.error, job.phase = str(exc), "erro"
+        job.say(f"ERROR: {exc}")
+    finally:
+        with job.lock:
+            job.running = False
+
+
 def work(folder: Path, model_id: str, email: str, password: str, password_field: str = "") -> None:
     try:
         with job.lock:
@@ -561,6 +605,18 @@ def login(slug: str):
         session["profiles"] = sorted(unlocked() | {slug})
         session.permanent = True
     return redirect(f"/p/{slug}")
+
+
+@app.post("/refresh/<slug>")
+def refresh(slug: str):
+    person = next((p for p in profiles.listing() if p["slug"] == slug), None)
+    if not person or not can_view(person):
+        return redirect("/")
+    if not job.snapshot()["running"]:
+        job.reset()
+        threading.Thread(target=refresh_work, args=(Path(person["dir"]),),
+                         daemon=True).start()
+    return redirect("/progress")
 
 
 @app.get("/logout")
