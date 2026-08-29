@@ -1,0 +1,85 @@
+# GarmiNAS for Synology Container Manager.
+#
+# Same as docker-compose.yml with two differences, both because Container
+# Manager has no command line to pass flags to:
+#
+#   1. The language model service has no "profiles" key, so it starts with
+#      everything else. It waits for the model file by itself, printing "à
+#      espera de /models/model.gguf" until the setup page downloads one. That
+#      wait is expected and harmless.
+#   2. No build step. Import the image through Container Manager instead, or
+#      use the main compose file if you have a shell.
+#
+# Every setting has a default, so no .env file is needed. To change one, edit
+# the value here in the Container Manager editor.
+
+services:
+  garmin:
+    image: garminas:1.0
+    container_name: garminas-cron
+    hostname: garminas
+    restart: unless-stopped
+    shm_size: "1gb"
+    mem_limit: 2g
+    environment:
+      TZ: Europe/Lisbon
+      GARMIN_DATA_DIR: /data
+      LLM_URL: http://llm:8080/v1/chat/completions
+      LLM_TIMEOUT: 3600
+      # Your DSM user, so the files are not owned by root. Leave as is if you
+      # do not know them; everything still works, it is just tidier this way.
+      PUID: ""
+      PGID: ""
+    volumes:
+      - ./data:/data
+      - ./models:/models
+    networks: [default]
+
+  web:
+    image: garminas:1.0
+    container_name: garminas-web
+    restart: unless-stopped
+    command: ["web"]
+    shm_size: "1gb"
+    mem_limit: 2g
+    environment:
+      TZ: Europe/Lisbon
+      GARMIN_DATA_DIR: /data
+      LLM_URL: http://llm:8080/v1/chat/completions
+      LLM_TIMEOUT: 3600
+      WEB_HOST: 0.0.0.0
+      PUID: ""
+      PGID: ""
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./data:/data
+      - ./models:/models
+    networks: [default]
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: garminas-llm
+    restart: unless-stopped
+    # Waits for the model file rather than dying and restarting while the
+    # setup page downloads it.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        while [ ! -f /models/model.gguf ]; do
+          echo "waiting for /models/model.gguf"; sleep 10;
+        done;
+        exec /app/llama-server
+        -m /models/model.gguf
+        --host 0.0.0.0 --port 8080
+        --ctx-size 8192
+        --threads 4
+        --n-predict 512
+    volumes:
+      - ./models:/models:ro
+    # A 4B model needs about 4 GB. Raise to 12g for the 12B, if the NAS has it.
+    mem_limit: 6g
+    networks: [default]
+
+networks:
+  default:

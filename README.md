@@ -136,7 +136,66 @@ That makes a NAS the natural host: stable IP, always on, so a session survives
 for weeks instead of breaking every time a laptop changes network. A laptop
 works too, with more re-authentication.
 
-## Moving it to a NAS
+## On a Synology, without a terminal
+
+Container Manager can run all of this from DSM, with no SSH and no commands on
+the NAS itself. You need Docker once, on another machine, to produce the image
+file; everything after that is the DSM interface.
+
+**1. Build the image, once, on a machine with Docker.**
+
+```bash
+docker build -t garminas:1.0 .
+docker save -o garminas.tar garminas:1.0
+```
+
+Save it uncompressed: Container Manager reads `.tar`, not `.tar.gz`. The file
+is around 1 GB.
+
+**2. Make a folder on the NAS.** In File Station, inside the `docker` shared
+folder, create `garminas`, and inside it create `data` and `models`. Upload
+`garminas.tar` into `garminas`.
+
+**3. Import the image.** Container Manager, **Image**, **Add**, **Add From
+File**, choose `garminas.tar`. It takes a minute or two and then appears in the
+list as `garminas:1.0`.
+
+**4. Create the project.** Container Manager, **Project**, **Create**.
+
+- Project name: `garminas`
+- Path: the `docker/garminas` folder you made
+- Source: **Create docker-compose.yml**, and paste the contents of
+  [`docker-compose.synology.yml`](docker-compose.synology.yml) from this
+  repository into the editor
+
+Then **Next**, **Next**, **Done**. It starts three containers.
+
+**5. Open the page.** `http://your-nas:8090`. Add a profile, pick a model, give
+your Garmin credentials, and it does the rest.
+
+The `garminas-llm` container will log `waiting for /models/model.gguf` until the
+setup page has downloaded a model. That is expected: it waits rather than
+crash-looping.
+
+### Notes for the Synology version
+
+The Synology compose file differs from the main one in two ways, both because
+Container Manager has no command line to pass flags to: the model service is
+not behind a profile, so it starts with everything else, and there is no build
+step, since the image is imported instead. Every setting has a default, so no
+`.env` file is needed. To change the timezone, the memory limits, or the port,
+edit the values in the Container Manager project editor and restart the
+project.
+
+If your DSM user id and group id are known to you, put them in `PUID` and
+`PGID` so the files under `data/` belong to you rather than to root. It works
+either way.
+
+Two containers ask for 2 GB and the model asks for 6, so a DS923+ with the
+stock 4 GB will be tight. With 16 GB there is room for the 12B model, in which
+case raise the model's `mem_limit` to `12g`.
+
+## Moving it to a NAS with a shell
 
 No registry involved. Build where the CPU is good, ship the image as a file:
 
