@@ -7,6 +7,10 @@
 #   days_since_hard_min      dias desde a última sessão de carga >= 100
 #   ctl_min                  base aeróbia mínima antes de permitir a sessão
 #   requires_fresh           exige que não haja bandeira de recuperação ativa
+#
+# load_est é a carga estimada da sessão, usada para projetar CTL/ATL/TSB ao
+# longo do plano. Não precisa de ser exata; precisa de ser coerente entre
+# sessões, para que a progressão simulada faça sentido.
 
 # --- Bloqueio de segurança ---------------------------------------------------
 # Se qualquer destas condições se verificar, só sessões marcadas
@@ -20,17 +24,20 @@ recovery_flags:
 workouts:
   - id: rest
     name: Descanso completo
+    load_est: 0
     recovery_safe: true
     description: Sem treino estruturado. Caminhada leve se apetecer.
 
   - id: easy_walk
     name: Caminhada longa
+    load_est: 20
     recovery_safe: true
     duration_min: 45
     description: Ritmo conversável, zona 1. Mantém o hábito sem adicionar carga.
 
   - id: easy_run
     name: Corrida fácil
+    load_est: 45
     recovery_safe: true
     duration_min: 35
     tsb_min: -20
@@ -40,6 +47,7 @@ workouts:
 
   - id: treadmill_base
     name: Passadeira contínua
+    load_est: 50
     recovery_safe: true
     duration_min: 40
     tsb_min: -20
@@ -49,6 +57,7 @@ workouts:
 
   - id: treadmill_intervals_short
     name: Intervalos curtos na passadeira
+    load_est: 85
     duration_min: 35
     tsb_min: -10
     days_since_hard_min: 2
@@ -59,6 +68,7 @@ workouts:
 
   - id: treadmill_intervals_long
     name: Intervalos longos na passadeira
+    load_est: 120
     duration_min: 50
     tsb_min: -5
     ctl_min: 25
@@ -70,6 +80,7 @@ workouts:
 
   - id: tempo
     name: Contínuo em ritmo controlado
+    load_est: 105
     duration_min: 45
     tsb_min: -8
     ctl_min: 30
@@ -81,6 +92,7 @@ workouts:
 
   - id: long_run
     name: Corrida longa
+    load_est: 95
     duration_min: 75
     tsb_min: -12
     ctl_min: 25
@@ -89,6 +101,7 @@ workouts:
 
   - id: strength
     name: Força para corredores
+    load_est: 30
     recovery_safe: true
     duration_min: 30
     description: >

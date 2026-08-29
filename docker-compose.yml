@@ -1,8 +1,9 @@
 services:
   garmin:
-    # Por omissão puxa a imagem já construída do GHCR.
-    # Para construir localmente: docker compose build
-    image: ghcr.io/OWNER/garmin-nas:${GARMIN_IMAGE_TAG:-latest}
+    # Imagem local, construída no PC e carregada na NAS com `docker load`.
+    # Sem registry: pull_policy never evita que o compose tente ir à internet.
+    image: garmin-nas:${GARMIN_IMAGE_TAG:-1.0}
+    pull_policy: never
     build:
       context: .
       dockerfile: Dockerfile
@@ -22,30 +23,39 @@ services:
     volumes:
       # Base de dados SQLite, ficheiros FIT, perfil do browser e credenciais.
       # Ajustar o caminho do lado esquerdo ao teu NAS.
-      - ./data:/data
+      # :z rotula para SELinux (Fedora, RHEL). Ignorado onde nao existe.
+      - ./data:/data:z
+      # O `setup` escreve aqui o modelo escolhido.
+      - ./models:/models:z
 
-    # O DS923+ traz 4 GB de base. O Chrome ocupa cerca de 1 GB em pico.
+    # O Chrome ocupa cerca de 1 GB em pico.
     mem_limit: 2g
 
     # Sem portas expostas: o container não serve nada, apenas sincroniza.
     networks:
       - default
 
-  # Modelo local. Opcional: sem ele o relatório sai na mesma, apenas sem a
-  # parte redigida. O DS923+ tem 2 núcleos, por isso 4B é o tecto sensato.
+  # Modelo local. Opcional, e por isso atrás de um profile: sem um .gguf em
+  # ./models o llama.cpp entrava em ciclo de reinício. O relatório sai na mesma
+  # quando o modelo não responde, apenas sem a parte redigida.
+  #
+  #   docker compose up -d                 -> só a sincronização
+  #   docker compose --profile llm up -d   -> sincronização + treinador redigido
   llm:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: garmin-llm
+    profiles: [llm]
     restart: unless-stopped
     command: >
       -m /models/${MODEL_FILE:-model.gguf}
       --host 0.0.0.0
       --port 8080
       --ctx-size 2048
-      --threads 4
+      --threads ${LLM_THREADS:-4}
       --n-predict 384
     volumes:
-      - ./models:/models:ro
+      - ./models:/models:ro,z
+    # A NAS tem 16 GB; o limite real são os 2 núcleos, daí um 4B.
     mem_limit: 6g
     networks:
       - default

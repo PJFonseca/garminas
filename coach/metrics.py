@@ -120,6 +120,7 @@ def load_activities(con, spec, since: date) -> list[dict]:
             "sport": (r["sport"] if "sport" in r.keys() else "unknown") or "unknown",
             "duration_s": (r["duration_s"] if "duration_s" in r.keys() else 0) or 0,
             "distance_m": (r["distance_m"] if "distance_m" in r.keys() else 0) or 0,
+            "avg_hr": (r["avg_hr"] if "avg_hr" in r.keys() else None),
             "load": float(load or 0),
         })
     return sorted(out, key=lambda a: a["date"])
@@ -159,6 +160,55 @@ def ewma_load(acts: list[dict], today: date, days: int, tc: int) -> float:
 def mean(values) -> float | None:
     values = [v for v in values if v is not None]
     return round(sum(values) / len(values), 1) if values else None
+
+
+def recent_sessions(acts: list[dict], n: int = 12) -> list[dict]:
+    """As últimas n sessões, da mais recente para a mais antiga."""
+    return [{
+        "date": a["date"].isoformat(),
+        "sport": a["sport"],
+        "minutes": round(a["duration_s"] / 60),
+        "km": round(a["distance_m"] / 1000, 1),
+        "avg_hr": round(a["avg_hr"]) if a["avg_hr"] else None,
+        "load": round(a["load"]),
+    } for a in reversed(acts[-n:])]
+
+
+def month_review(acts: list[dict], today: date) -> dict:
+    """Retrato dos últimos 28 dias, em quatro semanas fechadas.
+
+    A taxa de progressão compara a semana mais recente com a média das três
+    anteriores. Acima de 1.3 é o território onde as lesões por excesso
+    aparecem; abaixo de 0.8 há perda de forma.
+    """
+    weeks = []
+    for w in range(4):
+        end = today - timedelta(days=7 * w)
+        start = end - timedelta(days=6)
+        block = [a for a in acts if start <= a["date"] <= end]
+        weeks.append({
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "sessions": len(block),
+            "minutes": round(sum(a["duration_s"] for a in block) / 60),
+            "km": round(sum(a["distance_m"] for a in block) / 1000, 1),
+            "load": round(sum(a["load"] for a in block)),
+        })
+
+    previous = [w["load"] for w in weeks[1:] if w["load"] > 0]
+    ramp = round(weeks[0]["load"] / (sum(previous) / len(previous)), 2) if previous else None
+
+    last28 = [a for a in acts if a["date"] >= today - timedelta(days=27)]
+    runs = [a for a in last28 if a["distance_m"] > 0]
+    return {
+        "weeks": weeks,
+        "ramp": ramp,
+        "hard_sessions": len([a for a in last28 if a["load"] >= 100]),
+        "rest_days": 28 - len({a["date"] for a in last28}),
+        "longest_km": round(max((a["distance_m"] for a in runs), default=0) / 1000, 1),
+        "longest_min": round(max((a["duration_s"] for a in last28), default=0) / 60),
+        "total_load": round(sum(a["load"] for a in last28)),
+    }
 
 
 def build(con) -> dict:
@@ -219,6 +269,8 @@ def build(con) -> dict:
             "sleep_score_7d": mean(recent(sleep_score, 7)),
         },
         "by_sport_28d": by_sport,
+        "recent": recent_sessions(acts),
+        "month": month_review(acts, today),
         "coverage": {
             "activities": len(acts),
             "has_rhr": bool(rhr),

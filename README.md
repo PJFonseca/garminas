@@ -1,26 +1,26 @@
 # garmin-nas
 
-Dockerised [garmin-givemydata](https://github.com/nrvim/garmin-givemydata) for
-always-on servers and NAS boxes. Pulls your Garmin Connect history into a local
-SQLite database on a daily schedule, with no subscription and no cloud
-middleman.
+Dockerised [garmin-givemydata](https://github.com/nrvim/garmin-givemydata) plus a
+local training coach. Pulls your Garmin Connect history into a SQLite database on
+a daily schedule and writes a daily training report — no subscription, no cloud
+middleman, nothing leaves the machine.
 
-Built and tested on a Synology DS923+, but it runs anywhere Docker does on
-x86_64.
-
-*[Leia-me em português](LEIAME.md)*
+Runs anywhere Docker runs on x86_64: laptop, mini PC, home server. Built and
+tested on a Synology DS923+.
 
 ---
 
-## Why a NAS
+## Why an always-on host
 
 The upstream tool logs into Garmin Connect with a real Chrome instance, because
 in March 2026 Garmin tightened its Cloudflare bot protection and every
 credential-based Python library stopped working. The clearance cookie that
 Chrome earns is tied to your egress IP address.
 
-That makes a NAS the ideal host: stable IP, always on, so a session survives for
-weeks instead of breaking every time your laptop changes networks.
+That makes a NAS or home server the ideal host: stable IP, always on, so a
+session survives for weeks instead of breaking every time your laptop changes
+networks. A laptop works too — expect to re-authenticate when you change
+network.
 
 ## What you get
 
@@ -28,52 +28,127 @@ weeks instead of breaking every time your laptop changes networks.
   activities, splits, GPS trackpoints, body composition
 - Original FIT files, kept lossless
 - Daily incremental sync via `supercronic`
+- A daily training report in `data/reports/latest.md`, in four parts: the
+  sessions you actually did, an AI reading of them, a four-week review with a
+  progression ratio, and a calculated 7-to-15 day plan the AI explains. The
+  model runs locally on your own CPU; nothing leaves the machine
 - Optional MCP server so an AI assistant can query the database directly
 
 ## Quick start
 
+You need Docker and about 6 GB of free disk. Everything below assumes you are
+in the project folder.
+
+### 1. Build the image
+
 ```bash
-git clone https://github.com/OWNER/garmin-nas.git
-cd garmin-nas
+docker build -t garmin-nas:1.0 .
 cp .env.example .env
-mkdir -p data
 ```
 
-Edit `.env` — set `TZ`, and set `PUID`/`PGID` to match the owner of the `data`
-directory. On DSM, find them with `id yourusername`.
+You need the Compose plugin (`docker compose version` should answer). On Fedora
+that is `sudo dnf install docker-compose-plugin`.
 
-### First run: authenticate and fetch everything
+Ten minutes or so — most of it is Chrome. Nothing needs editing in `.env`
+unless you want a different timezone.
 
-Credentials are **not** placed in `.env`. The first run is interactive: the tool
-prompts for them and stores them itself inside `/data`.
+### 2. Run setup
 
 ```bash
-docker compose run --rm garmin \
-  xvfb-run -a garmin-givemydata --full
+docker compose run --rm garmin setup
 ```
 
-This launches Chrome under a virtual display, solves the Cloudflare challenge,
-logs in, and pulls your entire history. Expect around 30 minutes for ten years
-of data. The browser profile is saved to `data/browser_profile/`, so subsequent
-runs need no interaction.
+This is the whole configuration, in one interactive run. It asks which language
+model you want and downloads it, then asks for your Garmin credentials and
+pulls your history, then writes your first report. You only supply the access;
+it does the rest.
 
-If your account has multi-factor authentication, the prompt appears in this same
-terminal — keep the session attached until login completes.
+**The model.** The catalogue is short on purpose, because this runs on CPU:
 
-### Then: leave it running
+| | Size | Notes |
+|---|---|---|
+| Qwen3 4B Instruct | 2.3 GiB | Recommended. Best Portuguese of the four. |
+| Gemma 3 4B Instruct | 2.3 GiB | Looser prose, sometimes more verbose. |
+| Llama 3.2 3B Instruct | 1.9 GiB | ~30% faster, slightly less fluent. |
+| Qwen3 1.7B | 1.0 GiB | For weak CPUs or little RAM. |
+
+You can give it any other `.gguf` URL, or skip the model entirely — the report
+still comes out with the numbers and the plan, just without the written
+sections. Downloads resume if the connection drops.
+
+On two cores, expect two to three minutes per report with a 4B. Raise
+`LLM_THREADS` in `.env` if you have more cores.
+
+**The Garmin login.** Credentials are never placed in `.env`. The upstream tool
+prompts for them and stores them itself inside `/data`. Chrome starts under a
+virtual display, solves the Cloudflare challenge, logs in, and pulls your entire
+history — around 30 minutes for ten years of data. The browser profile is saved
+to `data/browser_profile/`, so later runs need no interaction.
+
+If your account has multi-factor authentication, the code is prompted in this
+same terminal — keep the session attached until login completes.
+
+### 3. Leave it running
 
 ```bash
-docker compose up -d
+docker compose --profile llm up -d      # sync + written report
+docker compose up -d                    # sync only, no model
 ```
 
-The container now sleeps until 05:30 each day, runs an incremental sync, and
-appends to `data/sync.log`.
+The container now sleeps until 05:30 each day, runs an incremental sync, and at
+06:30 writes the day's report. The hour of separation keeps Chrome and the model
+from competing for memory.
+
+The plan is generated by simulation, not by the model: eligibility rules and
+projected CTL/ATL/TSB decide which sessions land on which days, and the model is
+given the finished plan to explain. A small model cannot be trusted to know that
+three hard sessions in five days will hurt you. Arithmetic can. Recovery flags —
+resting heart rate up, HRV down, sleep short — are enforced in code and cut the
+catalogue down to recovery-safe sessions regardless of what the model thinks.
 
 ```bash
 docker compose logs -f garmin      # container output
 tail -f data/sync.log              # sync detail
-docker compose exec garmin garmin-givemydata --status
+cat data/reports/latest.md         # today's report
 ```
+
+### Commands
+
+The image takes a verb:
+
+```bash
+docker compose run --rm garmin setup        # full first-time configuration
+docker compose run --rm garmin auth         # re-run just the Garmin login
+docker compose run --rm garmin report       # generate a report right now
+docker compose run --rm garmin status       # upstream sync status
+docker compose run --rm garmin metrics --discover   # print the real DB schema
+```
+
+## Moving it to a NAS
+
+There is no registry involved. Build on a machine with a decent CPU, ship the
+image as a file:
+
+```bash
+# on the machine that built it
+docker save garmin-nas:1.0 | gzip > garmin-nas-1.0.tar.gz
+scp garmin-nas-1.0.tar.gz docker-compose.yml .env.example user@nas:/volume1/docker/garmin/
+
+# on the NAS, over SSH
+cd /volume1/docker/garmin
+docker load < garmin-nas-1.0.tar.gz
+cp .env.example .env
+docker compose run --rm garmin setup
+docker compose run --rm garmin auth
+docker compose --profile llm up -d
+```
+
+Both machines must be x86_64. Run `setup` and `auth` **on the NAS**, not on the
+machine that built the image — the Cloudflare cookie is bound to the egress IP,
+so a session created elsewhere will not survive.
+
+`docker-compose.yml` still carries a `build:` block, so on a machine with the
+sources present you can skip the export and just run `docker compose build`.
 
 ## Layout
 
@@ -82,8 +157,11 @@ data/
 ├── garmin.db          # everything, queryable with plain SQL
 ├── fit/               # original activity files
 ├── browser_profile/   # Cloudflare session — keep this
+├── reports/           # daily training reports, plus latest.md
 ├── .env               # credentials, written by the tool
 └── sync.log
+models/
+└── model.gguf         # written by `setup`
 ```
 
 ## Querying your data

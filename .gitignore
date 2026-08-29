@@ -1,0 +1,15 @@
+# Credenciais da Garmin, cookie de sessão do Chrome, base de dados e FIT.
+# Nada disto pode ir para um repositório.
+data/
+models/
+*.gguf
+
+# Imagens exportadas com `docker save`.
+*.tar
+*.tar.gz
+
+.env
+
+# Python
+__pycache__/
+*.pyc
