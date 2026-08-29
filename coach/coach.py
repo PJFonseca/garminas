@@ -34,7 +34,8 @@ from assess import ESTADOS, assess, desporto  # noqa: E402
 from plan import build_plan, eligible  # noqa: E402
 
 CATALOGUE = Path(__file__).with_name("workouts.yaml")
-OUT_DIR = Path(os.environ.get("COACH_OUT", "/data/reports"))
+DATA_DIR = Path(os.environ.get("GARMIN_DATA_DIR", "/data"))
+OUT_DIR = Path(os.environ.get("COACH_OUT") or DATA_DIR / "reports")
 LLM_URL = os.environ.get("LLM_URL", "http://llm:8080/v1/chat/completions")
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "600"))
 PLAN_DAYS = int(os.environ.get("COACH_PLAN_DAYS", "14"))

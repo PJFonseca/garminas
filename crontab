@@ -1,9 +1,9 @@
-# garmin-givemydata — sincronização incremental diária
+# garmin-givemydata: sincronização incremental diária, um perfil de cada vez
 # Formato: min hora dia mês dia-da-semana comando
 # Xvfb é necessário porque o Chrome corre sem ecrã dentro do container.
 
-30 5 * * * cd /data && xvfb-run -a garmin-givemydata >> /data/sync.log 2>&1
+30 5 * * * /perfis.sh xvfb-run -a garmin-givemydata >> /data/sync.log 2>&1
 
 # Relatorio de treino, uma hora depois da sincronizacao para nao disputar RAM
 # com o Chrome. O modelo demora 2-3 min a redigir no CPU do NAS.
-30 6 * * * cd /data && python3 /opt/coach/coach.py >> /data/coach.log 2>&1
+30 6 * * * /perfis.sh python3 /opt/coach/coach.py >> /data/coach.log 2>&1

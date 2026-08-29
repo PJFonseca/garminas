@@ -20,7 +20,8 @@ from pathlib import Path
 
 import yaml
 
-DB = Path(os.environ.get("GARMIN_DB", "/data/garmin.db"))
+DATA_DIR = Path(os.environ.get("GARMIN_DATA_DIR", "/data"))
+DB = Path(os.environ.get("GARMIN_DB") or DATA_DIR / "garmin.db")
 SCHEMA = Path(__file__).with_name("schema.yaml")
 
 # Constantes de periodização clássicas (Coggan): CTL a 42 dias, ATL a 7.

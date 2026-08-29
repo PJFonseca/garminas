@@ -35,7 +35,14 @@ case "${1:-cron}" in
     exec python3 /opt/coach/web.py
     ;;
   report)
-    exec python3 /opt/coach/coach.py
+    # Com PERFIL definido corre só esse; sem ele, todos.
+    if [ -n "${PERFIL:-}" ]; then
+      exec env GARMIN_DATA_DIR="/data/perfis/${PERFIL}" python3 /opt/coach/coach.py
+    fi
+    exec /perfis.sh python3 /opt/coach/coach.py
+    ;;
+  sync-todos)
+    exec /perfis.sh xvfb-run -a garmin-givemydata
     ;;
   metrics)
     shift
