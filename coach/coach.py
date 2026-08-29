@@ -39,7 +39,11 @@ CATALOGUE = Path(__file__).with_name("workouts.yaml")
 DATA_DIR = Path(os.environ.get("GARMIN_DATA_DIR", "/data"))
 OUT_DIR = Path(os.environ.get("COACH_OUT") or DATA_DIR / "reports")
 LLM_URL = os.environ.get("LLM_URL", "http://llm:8080/v1/chat/completions")
-LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "600"))
+# Uma hora por chamada. Parece muito e não é: um 12B em dois núcleos gera à
+# volta de meio token por segundo, e um relatório corre uma vez por dia, de
+# madrugada, sem ninguém à espera. Dez minutos era o suficiente para um 4B e
+# fazia um 12B devolver secções vazias sem explicar porquê.
+LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "3600"))
 PLAN_DAYS = int(os.environ.get("COACH_PLAN_DAYS", "14"))
 
 
@@ -242,6 +246,18 @@ STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos 
             "aparecem. Não calcules médias, somas, contagens nem diferenças.")
 
 
+def arranjar(texto: str) -> str:
+    """Corrige o que tem conserto, em vez de deitar o texto fora.
+
+    Um travessão troca-se por uma vírgula e o sentido não muda. Rejeitar três
+    respostas seguidas por causa de pontuação, e acabar sem secção nenhuma, é
+    gastar minutos de um modelo lento para ficar com menos do que se tinha. A
+    rejeição fica para o que não se arranja: números inventados e língua errada.
+    """
+    texto = re.sub(r"\s*[\u2014\u2013]\s*", ", ", texto)
+    return texto.replace(",,", ",")
+
+
 def aportuguesar(texto: str) -> str:
     """Troca palavras inequivocamente brasileiras pelas europeias."""
     def troca(m):
@@ -256,13 +272,11 @@ def aportuguesar(texto: str) -> str:
 def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
     """Rejeita o que soa a tradução. Devolve o motivo, para o registo.
 
-    Travessões e fórmulas de relatório valem para qualquer língua. Os gerúndios
-    e o pronome antes do verbo são defeitos do português, e correr essas
+    As fórmulas de relatório valem para qualquer língua. Os gerúndios e o
+    pronome antes do verbo são defeitos do português, e correr essas
     verificações sobre italiano ou espanhol daria falsos positivos a torto e a
-    direito.
+    direito. Travessões não estão aqui: arranjam-se, não se rejeitam.
     """
-    if "-" in texto or "-" in texto:
-        return False, "travessão"
     if ln != "pt":
         return True, ""
     if GERUNDIO_CONTINUO.search(texto):
@@ -318,6 +332,7 @@ def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
             reforco = STRICTER
             continue
 
+        text = arranjar(text)
         if ln == "pt":
             text = aportuguesar(text)
         ok, motivo = portugues_europeu(text, ln)

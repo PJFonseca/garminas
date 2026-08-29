@@ -103,13 +103,20 @@ finished a session and would rather not wait until morning.
 
 Short on purpose, because this runs on CPU:
 
-| | Size | Notes |
-|---|---|---|
-| Qwen3 4B Instruct | 2.3 GiB | Recommended. Two to three minutes per report on two cores. |
-| Gemma 3 4B Instruct | 2.3 GiB | Looser prose, sometimes more verbose. |
-| Llama 3.2 3B Instruct | 1.9 GiB | About 30% faster, slightly less fluent. |
-| Qwen3 1.7B | 1.0 GiB | For weak CPUs or little RAM. |
-| Gemma 3 12B Instruct | 6.8 GiB | Best writing here. Needs 8 cores and 8 GB free; hopeless on a two-core NAS. |
+| | Size | On two cores | Notes |
+|---|---|---|---|
+| Gemma 3 12B Instruct | 6.8 GiB | 1 to 3 hours | Recommended. The best writing, and the one that best follows what you ask it for. Needs `LLM_MEM=12g`. |
+| Qwen3 4B Instruct | 2.3 GiB | 3 minutes | The choice if you would rather not wait. |
+| Gemma 3 4B Instruct | 2.3 GiB | 3 minutes | Looser prose, sometimes more verbose. |
+| Llama 3.2 3B Instruct | 1.9 GiB | 2 minutes | Faster, slightly less fluent. |
+| Qwen3 1.7B | 1.0 GiB | 1 minute | For weak CPUs or little RAM. |
+
+An hour sounds like a lot until you notice what it is: a job that runs at 06:30
+while you sleep, once a day, with nobody waiting. The 12B measured 4.1 tokens a
+second on 24 cores here, so budget five to eight times that on a two-core NAS.
+`LLM_TIMEOUT` defaults to an hour per section for exactly this reason; ten
+minutes was enough for a 4B and made a 12B return empty sections without saying
+why.
 
 Every URL is checked, and every model is a non-reasoning one: a model that
 thinks before answering fills the context with its own reasoning and dies with

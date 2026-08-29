@@ -41,10 +41,20 @@ META = MODELS_DIR / "model.json"
 # Quantização Q4_K_M: o melhor compromisso entre tamanho e qualidade em CPU.
 CATALOGUE = [
     {
+        "id": "gemma3-12b",
+        "name": "Gemma 3 12B Instruct",
+        "mib": 6962,
+        "note": "O melhor texto, e o que melhor percebe o que lhe pedes. Precisa de 8 GB "
+                "livres. Em 2 núcleos leva 1 a 3 horas por relatório, o que não é problema "
+                "para uma coisa que corre de madrugada, uma vez por dia. Põe LLM_MEM=12g.",
+        "url": "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
+    },
+    {
         "id": "qwen3-4b",
         "name": "Qwen3 4B Instruct",
         "mib": 2381,
-        "note": "Recomendado. Melhor português dos quatro. ~2-3 min por relatório em 2 núcleos.",
+        "note": "Rápido e correto. Cerca de 3 minutos por relatório em 2 núcleos. "
+                "A escolha certa se não quiseres esperar.",
         "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
     },
     {
@@ -67,13 +77,6 @@ CATALOGUE = [
         "mib": 1056,
         "note": "Para máquinas fracas ou com pouca RAM. Texto mais seco, mas cumpre.",
         "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
-    },
-    {
-        "id": "gemma3-12b",
-        "name": "Gemma 3 12B Instruct",
-        "mib": 6962,
-        "note": "Melhor português do catálogo. Precisa de 8 núcleos ou mais e 8 GB livres; numa NAS de 2 seria insuportável.",
-        "url": "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
     },
 ]
 

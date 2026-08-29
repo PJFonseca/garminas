@@ -19,6 +19,7 @@ services:
       TZ: ${TZ:-Europe/Lisbon}
       GARMIN_DATA_DIR: /data
       LLM_URL: http://llm:8080/v1/chat/completions
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-3600}
       PUID: ${PUID:-}
       PGID: ${PGID:-}
 
@@ -53,6 +54,7 @@ services:
       GARMIN_DATA_DIR: /data
       LLM_URL: http://llm:8080/v1/chat/completions
       WEB_HOST: ${WEB_HOST:-0.0.0.0}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-3600}
       PUID: ${PUID:-}
       PGID: ${PGID:-}
     ports:
@@ -87,7 +89,7 @@ services:
         exec /app/llama-server
         -m /models/${MODEL_FILE:-model.gguf}
         --host 0.0.0.0 --port 8080
-        --ctx-size ${LLM_CTX:-4096}
+        --ctx-size ${LLM_CTX:-8192}
         --threads ${LLM_THREADS:-4}
         --n-predict 384
     volumes:
