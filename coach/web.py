@@ -59,6 +59,7 @@ YEAR = re.compile(r"Year\s+(\d+)\s*/\s*(\d+)")
 INNER = [
     (re.compile(r"Days\s+\d+\s*-\s*(\d+)\s*/\s*(\d+)"), "dia {a} de {b}"),
     (re.compile(r"Chunk\s+(\d+)\s*/\s*(\d+)"), "bloco {a} de {b}"),
+    (re.compile(r"(\d+)\s*/\s*(\d+)\s+downloaded"), "ficheiro {a} de {b}"),
 ]
 FINISHED = re.compile(r"\[\s*100%\s*\]\s*Done")
 
