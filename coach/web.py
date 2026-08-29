@@ -46,9 +46,57 @@ MFA_PROMPT = re.compile(r"MFA code", re.I)
 # aparece como lixo do género "[0m" no meio das frases.
 ANSI = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])")
 
-# O upstream anuncia o avanço da sincronização como "Days 232-238/366".
-# Vale mais na barra do que perdido no meio do registo.
-SYNC_PROGRESS = re.compile(r"Days\s+\d+\s*-\s*(\d+)\s*/\s*(\d+)")
+# Como o upstream reporta o avanço, lido do seu código: parte o histórico em
+# anos, do mais recente para trás, e anuncia "[ 50%] Year 3/6" ao entrar em
+# cada um. Dentro de cada ano faz duas passagens, uma por dias ("Days
+# 232-238/366") e outra por blocos mensais ("Chunk 5/13"), e ambas recomeçam
+# do zero. Seguir só uma delas dá uma barra que salta para trás; seguir só os
+# anos dá uma barra que fica parada durante minutos.
+#
+# Portanto: o ano define a banda, a passagem em curso enche-a, e o resultado
+# nunca recua.
+YEAR = re.compile(r"Year\s+(\d+)\s*/\s*(\d+)")
+INNER = [
+    (re.compile(r"Days\s+\d+\s*-\s*(\d+)\s*/\s*(\d+)"), "dia {a} de {b}"),
+    (re.compile(r"Chunk\s+(\d+)\s*/\s*(\d+)"), "bloco {a} de {b}"),
+]
+FINISHED = re.compile(r"\[\s*100%\s*\]\s*Done")
+
+
+class SyncProgress:
+    """Traduz o que o upstream imprime numa percentagem que não mente."""
+
+    def __init__(self) -> None:
+        self.year, self.years = 1, 1
+        self.pct = 0.0
+        self.step: str | None = None
+
+    def feed(self, line: str) -> None:
+        found = YEAR.search(line)
+        if found:
+            self.year, self.years = int(found.group(1)), max(1, int(found.group(2)))
+            self._set((self.year - 1) / self.years, f"ano {self.year} de {self.years}")
+            return
+
+        if FINISHED.search(line):
+            self._set(1.0, None)
+            return
+
+        for pattern, shape in INNER:
+            found = pattern.search(line)
+            if found:
+                a, b = int(found.group(1)), max(1, int(found.group(2)))
+                inner = min(1.0, a / b)
+                banda = f"ano {self.year} de {self.years} · " if self.years > 1 else ""
+                self._set((self.year - 1 + inner) / self.years,
+                          banda + shape.format(a=a, b=b))
+                return
+
+    def _set(self, fraction: float, step: str | None) -> None:
+        self.pct = max(self.pct, min(1.0, fraction) * 100)   # nunca recua
+        if step:
+            self.step = step
+
 
 # Nomes internos das fases e o que a pessoa lê.
 PHASES = {
@@ -77,6 +125,9 @@ class Job:
         self.needs_mfa = False
         self.mfa_code: str | None = None
         self.error: str | None = None
+        self.step: str | None = None
+        self.sync = SyncProgress()
+        self.started: float | None = None
         self.done = False
         self.running = False
 
@@ -90,13 +141,30 @@ class Job:
             self.log.append(line)
             del self.log[:-400]          # o histórico completo não interessa
 
+    def _eta(self) -> str | None:
+        """Estimativa a partir do ritmo observado, não de um palpite fixo.
+
+        Só aparece depois de 5% para não anunciar duas horas por causa dos
+        primeiros segundos, que são sempre os mais lentos.
+        """
+        if not self.started or not self.progress or self.progress < 5 or self.done:
+            return None
+        decorrido = time.time() - self.started
+        restante = decorrido * (100 - self.progress) / self.progress
+        if restante < 90:
+            return "falta menos de um minuto"
+        if restante < 5400:
+            return f"faltam cerca de {round(restante / 60)} min"
+        return f"faltam cerca de {restante / 3600:.1f} h"
+
     def snapshot(self) -> dict:
         with self.lock:
             return {
                 "phase": PHASES.get(self.phase, self.phase),
                 "needs_mfa": self.needs_mfa, "error": self.error,
                 "done": self.done, "running": self.running,
-                "progress": self.progress,
+                "progress": self.progress, "step": self.step,
+                "eta": self._eta(),
                 "log": self.log[-40:],
             }
 
@@ -108,7 +176,8 @@ def configured() -> bool:
     return DB.exists()
 
 
-def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False) -> bool:
+def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False,
+                  track: bool = False) -> bool:
     """Corre um comando ligado a um pseudo-terminal.
 
     O pty é indispensável: o upstream pede o código de dois passos com input(),
@@ -136,11 +205,11 @@ def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False) -> bool:
                     if not line.strip():
                         continue
                     job.say(line)
-                    found = SYNC_PROGRESS.search(ANSI.sub("", line))
-                    if found:
+                    if track:
+                        job.sync.feed(ANSI.sub("", line))
                         with job.lock:
-                            job.progress = min(100, round(int(found.group(1)) * 100
-                                                          / max(1, int(found.group(2)))))
+                            job.progress = round(job.sync.pct)
+                            job.step = job.sync.step
 
                 if mfa_ok and MFA_PROMPT.search(buffer):
                     job.say(buffer.strip())
@@ -198,7 +267,8 @@ def work(model_id: str, email: str, password: str) -> None:
             job.say("Sem modelo: o relatório sai com números e plano, sem texto.")
 
         with job.lock:
-            job.phase, job.progress = "garmin", None
+            job.phase, job.progress, job.step = "garmin", None, None
+            job.sync, job.started = SyncProgress(), time.time()
         save_credentials(email, password)
         job.say("Credenciais guardadas em /data/.env (só leitura para o dono).")
         job.say("A abrir o Chrome e a passar a proteção da Cloudflare. "
@@ -210,7 +280,7 @@ def work(model_id: str, email: str, password: str) -> None:
         try:
             ok = run_streaming(["xvfb-run", "-a", "garmin-givemydata", "--full"],
                                {"GARMIN_EMAIL": email, "GARMIN_PASSWORD": password},
-                               mfa_ok=True)
+                               mfa_ok=True, track=True)
         finally:
             LOCK.unlink(missing_ok=True)
         if not ok:
@@ -350,6 +420,7 @@ def progress_page():
 <h1>A configurar</h1>
 <p class=sub id=phase>A começar…</p>
 <div class=bar><i id=bar></i></div>
+<p class=sub id=step></p>
 <div id=mfa hidden>
   <h2>Código de verificação</h2>
   <p class=note-box>A Garmin pediu o código de dois passos. Escreve-o aqui.</p>
@@ -368,6 +439,11 @@ async function tick() {
   const indeterminado = s.running && s.progress === null;
   $('#bar').parentElement.classList.toggle('wait', indeterminado);
   $('#bar').style.width = indeterminado ? '0' : (s.progress ?? (s.done ? 100 : 0)) + '%';
+  const partes = [];
+  if (s.progress !== null && s.running) partes.push(s.progress + '%');
+  if (s.step && s.running) partes.push(s.step);
+  if (s.eta) partes.push(s.eta);
+  $('#step').textContent = partes.join(' · ');
   $('#log').textContent = s.log.join('\\n') || 'a aguardar…';
   $('#log').scrollTop = $('#log').scrollHeight;
   $('#mfa').hidden = !s.needs_mfa;
