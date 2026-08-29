@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Interface web: configurar numa página, depois ler os relatórios.
+"""Web interface: set up on one page, then read the reports.
 
-Uma pessoa abre o browser, escolhe o modelo, escreve as credenciais da Garmin
+Uma person abre o browser, escolhe o modelo, escreve as credenciais da Garmin
 e carrega em começar. A partir daí a aplicação trata de tudo: descarrega o
 modelo, guarda as credenciais como o upstream as guardaria, sincroniza o
 histórico, pede o código de dois passos se for preciso, e escreve o primeiro
@@ -32,9 +32,9 @@ from flask import Flask, jsonify, redirect, request, send_file, session
 sys.path.insert(0, str(Path(__file__).parent))
 from setup import CATALOGUE, META, TARGET, human  # noqa: E402
 from setup import download as download_model  # noqa: E402
-import perfis  # noqa: E402
-from idioma import APP, escolher, linguas  # noqa: E402
-from idioma import t as _t  # noqa: E402
+import profiles  # noqa: E402
+from language import APP, languages, pick  # noqa: E402
+from language import t as _t  # noqa: E402
 from report_html import CSS as VIZ_CSS, report_html  # noqa: E402
 
 DATA = Path(os.environ.get("GARMIN_DATA_DIR_ROOT", "/data"))
@@ -51,7 +51,7 @@ ANSI = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07]*\x07|[@-Z\\-_])")
 
 # Como o upstream reporta o avanço, lido do seu código: parte o histórico em
 # anos, do mais recente para trás, e anuncia "[ 50%] Year 3/6" ao entrar em
-# cada um. Dentro de cada ano faz duas passagens, uma por dias ("Days
+# cada um. Dentro de cada ano faz duas passagens, uma por days_list ("Days
 # 232-238/366") e outra por blocos mensais ("Chunk 5/13"), e ambas recomeçam
 # do zero. Seguir só uma delas dá uma barra que salta para trás; seguir só os
 # anos dá uma barra que fica parada durante minutos.
@@ -64,7 +64,7 @@ INNER = [
     (re.compile(r"Chunk\s+(\d+)\s*/\s*(\d+)"), "bloco {a} de {b}"),
 ]
 
-# Depois dos anos de dados vem a descarga dos ficheiros FIT, que pode ser a
+# Depois dos anos de data vem a descarga dos ficheiros FIT, que pode ser a
 # parte mais demorada de todas. É uma segunda fase, não a continuação da
 # primeira: tratá-las como uma só punha a barra nos 100% com setecentos
 # ficheiros ainda por descarregar.
@@ -130,7 +130,7 @@ class SyncProgress:
             self.step = step
 
 
-# Nomes internos das fases e o que a pessoa lê.
+# Nomes internos das fases e o que a person lê.
 PHASES = {
     "parado": "A começar",
     "modelo": "A descarregar o modelo de linguagem",
@@ -152,27 +152,27 @@ if not _chave.exists():
 app.secret_key = _chave.read_bytes()
 
 
-def lingua() -> str:
+def request_language() -> str:
     """Antes de existir um perfil não há conta para consultar, por isso vale o
     que o browser pede. Depois de existir, manda o perfil."""
     try:
-        preferida = request.accept_languages.best_match(linguas())
+        preferida = request.accept_languages.best_match(languages())
     except RuntimeError:                      # fora de um pedido
         preferida = None
-    return escolher(preferida)
+    return pick(preferida)
 
 
-def desbloqueados() -> set:
-    return set(session.get("perfis", []))
+def unlocked() -> set:
+    return set(session.get("profiles", []))
 
 
-def pode_ver(p: dict) -> bool:
-    """Sem senha, qualquer pessoa da casa vê. Com senha, só quem a souber."""
-    return not p["tem_senha"] or p["slug"] in desbloqueados()
+def can_view(p: dict) -> bool:
+    """Sem password_field, qualquer person da casa vê. Com password_field, só quem a souber."""
+    return not p["has_password"] or p["slug"] in unlocked()
 
 
-def cifra(senha: str) -> str:
-    return hashlib.sha256(("garmin-nas:" + senha).encode()).hexdigest()
+def password_hash(password_field: str) -> str:
+    return hashlib.sha256(("garmin-nas:" + password_field).encode()).hexdigest()
 
 
 class Job:
@@ -238,7 +238,7 @@ job = Job()
 
 
 def configured() -> bool:
-    return bool(perfis.listar())
+    return bool(profiles.listing())
 
 
 def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False,
@@ -246,7 +246,7 @@ def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False,
     """Corre um comando ligado a um pseudo-terminal.
 
     O pty é indispensável: o upstream pede o código de dois passos com input(),
-    e sem terminal esse pedido nunca aparece — o processo ficaria bloqueado
+    e sem terminal esse pedido nunca aparece, o processo ficaria bloqueado
     para sempre sem dizer porquê.
     """
     master, slave = pty.openpty()
@@ -298,18 +298,18 @@ def run_streaming(cmd: list[str], env: dict, mfa_ok: bool = False,
     return proc.wait() == 0
 
 
-def save_credentials(pasta: Path, email: str, password: str) -> None:
+def save_credentials(folder: Path, email: str, password: str) -> None:
     """Mesmo formato e permissões que o upstream usa no seu próprio prompt.
 
     Sem este ficheiro a sincronização diária das 05:30 ficaria à espera que
     alguém escrevesse a palavra-passe num terminal que ninguém está a ver.
     """
-    env = pasta / ".env"
+    env = folder / ".env"
     env.write_text(f"GARMIN_EMAIL={email}\nGARMIN_PASSWORD={password}\n")
     env.chmod(0o600)
 
 
-def work(pasta: Path, model_id: str, email: str, password: str, senha: str = "") -> None:
+def work(folder: Path, model_id: str, email: str, password: str, password_field: str = "") -> None:
     try:
         with job.lock:
             job.running, job.phase = True, "modelo"
@@ -335,22 +335,22 @@ def work(pasta: Path, model_id: str, email: str, password: str, senha: str = "")
         with job.lock:
             job.phase, job.progress, job.step = "garmin", None, None
             job.sync, job.started = SyncProgress(), time.time()
-        save_credentials(pasta, email, password)
-        job.say(f"Credenciais guardadas em {pasta}/.env, legíveis só pelo dono.")
+        save_credentials(folder, email, password)
+        job.say(f"Credenciais guardadas em {folder}/.env, legíveis só pelo dono.")
         job.say("A abrir o Chrome e a passar a proteção da Cloudflare. "
                 "A primeira sincronização puxa o histórico todo e demora.")
 
-        trinco = pasta / ".sync.lock"
-        if trinco.exists():
+        lockfile = folder / ".sync.lock"
+        if lockfile.exists():
             raise RuntimeError("já há uma sincronização a decorrer para este perfil")
-        trinco.touch()
+        lockfile.touch()
         try:
             ok = run_streaming(["xvfb-run", "-a", "garmin-givemydata", "--full"],
                                {"GARMIN_EMAIL": email, "GARMIN_PASSWORD": password,
-                                "GARMIN_DATA_DIR": str(pasta)},
+                                "GARMIN_DATA_DIR": str(folder)},
                                mfa_ok=True, track=True)
         finally:
-            trinco.unlink(missing_ok=True)
+            lockfile.unlink(missing_ok=True)
         if not ok:
             raise RuntimeError("a sincronização com a Garmin falhou; vê o registo acima")
 
@@ -358,24 +358,24 @@ def work(pasta: Path, model_id: str, email: str, password: str, senha: str = "")
             job.phase = "relatório"
         job.say("A gerar o primeiro relatório.")
         if not run_streaming([sys.executable, "/opt/coach/coach.py"],
-                             {"GARMIN_DATA_DIR": str(pasta)}):
+                             {"GARMIN_DATA_DIR": str(folder)}):
             raise RuntimeError("o relatório falhou")
 
         # Só agora se sabe o nome verdadeiro: vem da Garmin, não de quem
-        # escreveu o email. A pasta provisória passa a ter o nome certo.
-        dados = perfis.registar(pasta)
-        if senha:
-            dados["senha"] = cifra(senha)
-            perfis.escrever(pasta, dados)
-        certo = perfis.slug(dados.get("primeiro") or pasta.name)
-        if certo != pasta.name and not (perfis.PERFIS / certo).exists():
-            pasta.rename(perfis.PERFIS / certo)
-            pasta = perfis.PERFIS / certo
+        # escreveu o email. A folder provisória passa a ter o nome proper.
+        data = profiles.register(folder)
+        if password_field:
+            data["password_field"] = password_hash(password_field)
+            profiles.write(folder, data)
+        proper = profiles.slug(data.get("first") or folder.name)
+        if proper != folder.name and not (profiles.PROFILES / proper).exists():
+            folder.rename(profiles.PROFILES / proper)
+            folder = profiles.PROFILES / proper
 
         with job.lock:
-            job.phase, job.done, job.slug = "pronto", True, pasta.name
-        job.say(f"Feito. Perfil de {dados.get('nome') or pasta.name} pronto.")
-    except Exception as exc:                       # noqa: BLE001 — vai para o ecrã
+            job.phase, job.done, job.slug = "pronto", True, folder.name
+        job.say(f"Feito. Perfil de {data.get('nome') or folder.name} pronto.")
+    except Exception as exc:                       # noqa: BLE001, vai para o ecrã
         with job.lock:
             job.error, job.phase = str(exc), "erro"
         job.say(f"ERRO: {exc}")
@@ -431,23 +431,23 @@ a, a:visited { color:var(--accent); text-decoration-color:color-mix(in srgb, var
 a:hover { text-decoration-thickness:2px; }
 nav a { text-decoration:none; }
 
-.anteriores { display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0 0; }
-.anteriores a { display:inline-block; padding:.3rem .7rem; border:1px solid var(--line);
+.previous { display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0 0; }
+.previous a { display:inline-block; padding:.3rem .7rem; border:1px solid var(--line);
   border-radius:99px; font-size:.85rem; text-decoration:none; font-variant-numeric:tabular-nums; }
-.anteriores a:hover { border-color:var(--accent); }
-.anteriores .hoje { border-color:var(--accent); font-weight:600; }
+.previous a:hover { border-color:var(--accent); }
+.previous .today_str { border-color:var(--accent); font-weight:600; }
 
-.gente { display:flex; flex-wrap:wrap; gap:1rem; margin:1.5rem 0; }
-.pessoa { display:flex; flex-direction:column; align-items:center; gap:.6rem; width:8.5rem;
+.people { display:flex; flex-wrap:wrap; gap:1rem; margin:1.5rem 0; }
+.person { display:flex; flex-direction:column; align-items:center; gap:.6rem; width:8.5rem;
   padding:1.1rem .6rem; border:1px solid var(--line); border-radius:14px; text-decoration:none;
   color:var(--fg); }
-.pessoa:hover { border-color:var(--accent); }
-.pessoa img, .pessoa .iniciais { width:5rem; height:5rem; border-radius:50%; object-fit:cover;
+.person:hover { border-color:var(--accent); }
+.person img, .person .iniciais { width:5rem; height:5rem; border-radius:50%; object-fit:cover;
   display:grid; place-items:center; background:color-mix(in srgb, var(--accent) 12%, transparent);
   font-size:2rem; font-weight:600; color:var(--accent); }
-.pessoa .nome { font-weight:600; font-size:.95rem; text-align:center; }
-.pessoa.nova .iniciais { background:none; border:1px dashed var(--line); }
-.cadeado { color:var(--dim); }
+.person .nome { font-weight:600; font-size:.95rem; text-align:center; }
+.person.nova .iniciais { background:none; border:1px dashed var(--line); }
+.lock { color:var(--dim); }
 nav .avatar { width:1.6rem; height:1.6rem; border-radius:50%; object-fit:cover; }
 nav { align-items:center; }
 nav b { margin-right:auto; }
@@ -485,114 +485,114 @@ document.querySelectorAll('dialog').forEach(d => {
 def home():
     """A porta de entrada: quem és tu, ou cria um perfil novo."""
     if job.snapshot()["running"]:
-        return redirect("/progresso")
-    gente = perfis.listar()
-    if not gente:
-        return redirect("/novo")
+        return redirect("/progress")
+    people = profiles.listing()
+    if not people:
+        return redirect("/new")
 
-    cartoes = []
-    for pessoa in gente:
-        retrato = (f'<img src="/foto/{pessoa["slug"]}" alt="">' if pessoa["foto"]
-                   else f'<span class=iniciais>{escape(pessoa["primeiro"][:1].upper())}</span>')
-        cadeado = ' <span class=cadeado title="protegido por senha">•</span>' if pessoa["tem_senha"] else ""
-        cartoes.append(
-            f'<a class=pessoa href="/p/{pessoa["slug"]}">{retrato}'
-            f'<span class=nome>{escape(pessoa["primeiro"])}{cadeado}</span></a>')
+    cards = []
+    for person in people:
+        portrait = (f'<img src="/photo/{person["slug"]}" alt="">' if person["photo"]
+                   else f'<span class=iniciais>{escape(person["first"][:1].upper())}</span>')
+        lock = ' <span class=lock title="protegido por password_field">•</span>' if person["has_password"] else ""
+        cards.append(
+            f'<a class=person href="/p/{person["slug"]}">{portrait}'
+            f'<span class=nome>{escape(person["first"])}{lock}</span></a>')
 
-    ln = lingua()
-    cartoes.append(f'<a class="pessoa nova" href="/novo">'
+    ln = request_language()
+    cards.append(f'<a class="person nova" href="/new">'
                    f'<span class=iniciais>+</span>'
                    f'<span class=nome>{_t("ui.adicionar", ln)}</span></a>')
     return page(APP, f"""
 <h1>{_t("ui.quem", ln)}</h1>
 <p class=sub>{_t("ui.quem_sub", ln)}</p>
-<div class=gente>{"".join(cartoes)}</div>""")
+<div class=people>{"".join(cards)}</div>""")
 
 
-@app.get("/foto/<slug>")
-def foto(slug: str):
-    pasta = perfis.pasta_de(slug)
-    dados = perfis.ler(pasta) if pasta else {}
-    if pasta and dados.get("foto") and (pasta / dados["foto"]).exists():
-        return send_file(pasta / dados["foto"])
+@app.get("/photo/<slug>")
+def photo(slug: str):
+    folder = profiles.folder_of(slug)
+    data = profiles.read(folder) if folder else {}
+    if folder and data.get("photo") and (folder / data["photo"]).exists():
+        return send_file(folder / data["photo"])
     return ("", 404)
 
 
 @app.get("/p/<slug>")
 @app.get("/p/<slug>/<day>")
-def perfil(slug: str, day: str | None = None):
-    pessoa = next((p for p in perfis.listar() if p["slug"] == slug), None)
-    if not pessoa:
+def profile_page(slug: str, day: str | None = None):
+    person = next((p for p in profiles.listing() if p["slug"] == slug), None)
+    if not person:
         return redirect("/")
-    ln = escolher(pessoa.get("idioma"))
-    if not pode_ver(pessoa):
-        return page(f'{pessoa["primeiro"]}, {APP}', f"""
+    ln = pick(person.get("language"))
+    if not can_view(person):
+        return page(f'{person["first"]}, {APP}', f"""
 <nav><a href="/">{_t("ui.voltar", ln)}</a></nav>
-<h1>{escape(pessoa["primeiro"])}</h1>
+<h1>{escape(person["first"])}</h1>
 <p class=sub>Este perfil está protegido.</p>
-<form method=post action="/entrar/{slug}">
-  <label for=senha>Senha</label>
-  <input type=password id=senha name=senha autofocus autocomplete=current-password>
+<form method=post action="/login/{slug}">
+  <label for=password_field>Senha</label>
+  <input type=password id=password_field name=password_field autofocus autocomplete=current-password>
   <button type=submit>Entrar</button>
 </form>""")
-    return relatorio_de(pessoa, day)
+    return report_for(person, day)
 
 
-@app.post("/entrar/<slug>")
-def entrar(slug: str):
-    pasta = perfis.pasta_de(slug)
-    dados = perfis.ler(pasta) if pasta else {}
-    if dados.get("senha") and cifra(request.form.get("senha", "")) == dados["senha"]:
-        session["perfis"] = sorted(desbloqueados() | {slug})
+@app.post("/login/<slug>")
+def login(slug: str):
+    folder = profiles.folder_of(slug)
+    data = profiles.read(folder) if folder else {}
+    if data.get("password_field") and password_hash(request.form.get("password_field", "")) == data["password_field"]:
+        session["profiles"] = sorted(unlocked() | {slug})
         session.permanent = True
     return redirect(f"/p/{slug}")
 
 
-@app.get("/sair")
-def sair():
+@app.get("/logout")
+def logout():
     session.clear()
     return redirect("/")
 
 
-def relatorio_de(pessoa: dict, day: str | None):
-    ln = escolher(pessoa.get("idioma"))
-    pasta = Path(pessoa["dir"])
-    reports = pasta / "reports"
+def report_for(person: dict, day: str | None):
+    ln = pick(person.get("language"))
+    folder = Path(person["dir"])
+    reports = folder / "reports"
     if not reports.exists():
         return page(APP, f'<nav><a href="/">{_t("ui.voltar", ln)}</a></nav>'
                     f'<h1>{_t("ui.sem_relatorios", ln)}</h1>'
-                    f'<p class=sub>{_t("ui.sem_relatorios_sub", ln, nome=escape(pessoa["primeiro"]))}'
+                    f'<p class=sub>{_t("ui.sem_relatorios_sub", ln, nome=escape(person["first"]))}'
                     f'</p>')
 
-    dias = sorted((f.stem for f in reports.glob("*.md") if f.stem != "latest"), reverse=True)
+    days_list = sorted((f.stem for f in reports.glob("*.md") if f.stem != "latest"), reverse=True)
     stem = day or "latest"
-    estruturado = reports / f"{stem}.json"
-    if estruturado.exists():
-        corpo = report_html(json.loads(estruturado.read_text()))
+    structured = reports / f"{stem}.json"
+    if structured.exists():
+        body = report_html(json.loads(structured.read_text()))
     else:
-        alternativa = reports / f"{stem}.md"
-        if not alternativa.exists():
+        fallback = reports / f"{stem}.md"
+        if not fallback.exists():
             return page("garmin-nas", "<h1>Relatório não encontrado</h1>"), 404
-        corpo = markdown.markdown(alternativa.read_text(), extensions=["tables"])
-        corpo = corpo.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
+        body = markdown.markdown(fallback.read_text(), extensions=["tables"])
+        body = body.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
 
-    hoje = date.today().isoformat()
-    anteriores = "".join(
-        f'<a class="{"hoje" if d == hoje else ""}" href="/p/{pessoa["slug"]}/{d}">'
-        f'{d}{" (hoje)" if d == hoje else ""}</a>' for d in dias[:14])
-    retrato = (f'<img class=avatar src="/foto/{pessoa["slug"]}" alt="">' if pessoa["foto"] else "")
-    sair = f'<a href=/sair>{_t("ui.sair", ln)}</a>' if pessoa["tem_senha"] else ""
-    return page(f'{pessoa["primeiro"]}, {APP}',
-                f'<nav>{retrato}<b>{escape(pessoa["nome"])}</b>'
+    today_str = date.today().isoformat()
+    previous = "".join(
+        f'<a class="{"today_str" if d == today_str else ""}" href="/p/{person["slug"]}/{d}">'
+        f'{d}{" (today_str)" if d == today_str else ""}</a>' for d in days_list[:14])
+    portrait = (f'<img class=avatar src="/photo/{person["slug"]}" alt="">' if person["photo"] else "")
+    sair = f'<a href=/logout>{_t("ui.sair", ln)}</a>' if person["has_password"] else ""
+    return page(f'{person["first"]}, {APP}',
+                f'<nav>{portrait}<b>{escape(person["name"])}</b>'
                 f'<a href="/">{_t("ui.trocar", ln)}</a>'
-                f'<a href="/novo">{_t("ui.adicionar", ln)}</a>{sair}</nav>{corpo}'
-                f'<hr><h3>{_t("ui.anteriores", ln)}</h3>'
-                f'<div class=anteriores>{anteriores or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',
+                f'<a href="/new">{_t("ui.adicionar", ln)}</a>{sair}</nav>{body}'
+                f'<hr><h3>{_t("ui.previous", ln)}</h3>'
+                f'<div class=previous>{previous or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',
                 MODAL_JS, wide=True)
 
 
-@app.get("/novo")
-def novo():
+@app.get("/new")
+def new_profile():
     return setup_form()
 
 
@@ -604,26 +604,26 @@ def setup_form() -> str:
             <span class=note>{m['note']}</span></span></label>'''
         for i, m in enumerate(CATALOGUE))
 
-    ja_ha = bool(perfis.listar())
+    ja_ha = bool(profiles.listing())
     modelo_ja = TARGET.exists()
     bloco_modelo = "" if modelo_ja else f"""
   <h2>Modelo de linguagem</h2>
   <p class=note-box>Corre no teu computador, não na nuvem. Escreve os comentários
-  do relatório, e é partilhado por todos os perfis. Os números e o plano são
+  do relatório, e é partilhado por todos os profiles. Os números e o plano são
   calculados e não dependem dele.</p>
   {options}
   <label class=model><input type=radio name=model value=""><span><b>Nenhum</b>
     <span class=note>Relatório só com números, tabelas e plano.</span></span></label>"""
 
-    return page("Novo perfil — garmin-nas", f"""
+    return page("Novo perfil, garmin-nas", f"""
 {'<nav><a href="/">Voltar</a></nav>' if ja_ha else ''}
 <h1>{'Adicionar perfil' if ja_ha else 'garmin-nas'}</h1>
-<p class=sub>{'Cada pessoa entra com a sua própria conta Garmin.'
+<p class=sub>{'Cada person entra com a sua própria conta Garmin.'
               if ja_ha else 'Dá os acessos da Garmin e arranca.'}</p>
 
-<form method=post action=/comecar>
+<form method=post action=/start>
   {bloco_modelo}
-  {'<p class=note-box>O modelo já está instalado e serve todos os perfis.</p>' if modelo_ja else ''}
+  {'<p class=note-box>O modelo já está instalado e serve todos os profiles.</p>' if modelo_ja else ''}
 
   <h2>Garmin Connect</h2>
   <p class=note-box>Ficam guardadas no disco desta máquina, legíveis só pelo dono,
@@ -640,60 +640,61 @@ def setup_form() -> str:
   <p class=note-box>Opcional, e serve só para os relatórios não ficarem à vista
   de toda a casa. Não é segurança a sério: a página anda em HTTP simples na
   rede local.</p>
-  <label for=senha>Senha, ou deixa em branco</label>
-  <input type=password id=senha name=senha autocomplete=new-password>
+  <label for=password_field>Senha, ou deixa em branco</label>
+  <input type=password id=password_field name=password_field autocomplete=new-password>
 
   <button type=submit>Começar</button>
 </form>""")
 
 
-@app.post("/comecar")
+@app.post("/start")
 def start():
     if job.snapshot()["running"]:
-        return redirect("/progresso")
+        return redirect("/progress")
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "")
     if not email or not password:
-        return redirect("/novo")
+        return redirect("/new")
 
     # Nome provisório, tirado do email. O verdadeiro só se sabe depois da
     # primeira sincronização, porque é a Garmin que o tem.
-    base = perfis.slug(email.split("@")[0]) or "perfil"
-    nome = base
+    stem_base = profiles.slug(email.split("@")[0]) or "profile"
+    name = stem_base
     n = 2
-    while (perfis.PERFIS / nome).exists():
-        nome, n = f"{base}-{n}", n + 1
-    pasta = perfis.criar(nome)
+    while (profiles.PROFILES / name).exists():
+        name, n = f"{stem_base}-{n}", n + 1
+    folder = profiles.create(name)
 
     job.reset()
     threading.Thread(target=work,
-                     args=(pasta, request.form.get("model", ""), email, password,
-                           request.form.get("senha", "").strip()),
+                     args=(folder, request.form.get("model", ""), email, password,
+                           request.form.get("password_field", "").strip()),
                      daemon=True).start()
-    return redirect("/progresso")
+    return redirect("/progress")
 
 
-@app.get("/progresso")
+@app.get("/progress")
 def progress_page():
-    return page("A configurar — garmin-nas", """
-<h1>A configurar</h1>
-<p class=sub id=phase>A começar…</p>
+    ln = request_language()
+    return page(f'{_t("ui.a_configurar", ln)}, {APP}', f"""
+<h1>{_t("ui.a_configurar", ln)}</h1>
+<p class=sub id=phase>{_t("ui.comecar", ln)}…</p>
 <div class=bar><i id=bar></i></div>
 <p class=sub id=step></p>
 <div id=mfa hidden>
-  <h2>Código de verificação</h2>
-  <p class=note-box>A Garmin pediu o código de dois passos. Escreve-o aqui.</p>
+  <h2>{_t("ui.codigo", ln)}</h2>
+  <p class=note-box>{_t("ui.codigo_sub", ln)}</p>
   <input type=text id=code inputmode=numeric autocomplete=one-time-code>
-  <button id=sendcode type=button>Enviar código</button>
+  <button id=sendcode type=button>{_t("ui.enviar_codigo", ln)}</button>
 </div>
-<h2>Registo</h2>
-<pre id=log>a aguardar…</pre>
-<p id=finished hidden><a id=verlink href=/>Ver o relatório</a></p>
+<h2>{_t("ui.registo", ln)}</h2>
+<pre id=log>{_t("ui.aguardar", ln)}…</pre>
+<p id=finished hidden><a id=verlink href=/>{_t("ui.ver_relatorio", ln)}</a></p>
 """, """<script>
 const $ = s => document.querySelector(s);
 async function tick() {
-  const s = await (await fetch('/estado')).json();
-  $('#phase').textContent = s.error ? 'Falhou: ' + s.error : s.phase + '…';
+  const s = await (await fetch('/status')).json();
+  $('#phase').textContent = s.error ? s.error : s.phase + '…';
   if (s.error) $('#phase').className = 'err';
   const indeterminado = s.running && s.progress === null;
   $('#bar').parentElement.classList.toggle('wait', indeterminado);
@@ -703,7 +704,7 @@ async function tick() {
   if (s.step && s.running) partes.push(s.step);
   if (s.eta) partes.push(s.eta);
   $('#step').textContent = partes.join(' · ');
-  $('#log').textContent = s.log.join('\\n') || 'a aguardar…';
+  $('#log').textContent = s.log.join('\\n') || '…';
   $('#log').scrollTop = $('#log').scrollHeight;
   $('#mfa').hidden = !s.needs_mfa;
   $('#finished').hidden = !s.done;
@@ -719,7 +720,7 @@ tick();
 </script>""")
 
 
-@app.get("/estado")
+@app.get("/status")
 def state():
     return jsonify(job.snapshot())
 
@@ -733,17 +734,19 @@ def mfa():
     return jsonify({"ok": bool(code)})
 
 
-@app.get("/relatorio")
-def relatorio_antigo():
-    gente = perfis.listar()
-    return redirect(f'/p/{gente[0]["slug"]}' if len(gente) == 1 else "/")
+@app.get("/report")
+def legacy_report():
+    people = profiles.listing()
+    return redirect(f'/p/{people[0]["slug"]}' if len(people) == 1 else "/")
 
 
 
 if __name__ == "__main__":
-    perfis.PERFIS.mkdir(parents=True, exist_ok=True)
-    movido = perfis.migrar()
-    if movido:
-        print(f"instalação antiga arrumada no perfil '{movido}'", flush=True)
+    # A migração primeiro: criar a pasta nova antes disso fazia a renomeação
+    # da antiga deixar de acontecer, e ficavam as duas lado a lado.
+    moved = profiles.migrate()
+    profiles.PROFILES.mkdir(parents=True, exist_ok=True)
+    if moved:
+        print(f"instalação antiga arrumada no perfil '{moved}'", flush=True)
     print(f"garmin-nas: http://{HOST}:{PORT}", flush=True)
     app.run(host=HOST, port=PORT, threaded=True)

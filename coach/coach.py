@@ -12,7 +12,7 @@ retrato dos últimos 30 dias, e o plano para os próximos dias.
 
 O modelo nunca calcula, nunca inventa sessões, e nunca decide sozinho ignorar
 uma bandeira de recuperação. Se o modelo estiver em baixo, o relatório sai na
-mesma — só que sem as partes redigidas.
+mesma, só que sem as partes redigidas.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))
 from metrics import build, connect  # noqa: E402
 from assess import ESTADOS, assess, desporto  # noqa: E402
-from idioma import APP, escolher  # noqa: E402
-from idioma import t as _t  # noqa: E402
+from language import APP, pick  # noqa: E402
+from language import t as _t  # noqa: E402
 from plan import build_plan, eligible  # noqa: E402
 
 CATALOGUE = Path(__file__).with_name("workouts.yaml")
@@ -219,7 +219,7 @@ def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
     verificações sobre italiano ou espanhol daria falsos positivos a torto e a
     direito.
     """
-    if "—" in texto or "–" in texto:
+    if "-" in texto or "-" in texto:
         return False, "travessão"
     if ln != "pt":
         return True, ""
@@ -286,7 +286,7 @@ def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
         reforco = AVISO_LINGUA
 
     # Os números estão certos e a língua não está perfeita: vale mais o texto
-    # aportuguesado do que secção nenhuma. O contrário — números errados — é
+    # aportuguesado do que secção nenhuma. O contrário, números errados, é
     # que não se aceita.
     return melhor
 
@@ -295,7 +295,7 @@ def ramp_verdict(ramp, ln: str = "en") -> str:
     """Diz o que a progressão significa, em vez de deixar o modelo comparar.
 
     Entregue apenas o número e a regra, o modelo escreveu que 0.65 estava
-    'dentro do intervalo seguro (acima de 0.8 é perda de forma)' — a
+    'dentro do intervalo seguro (acima de 0.8 é perda de forma)', a
     conclusão oposta ao que os seus próprios dados diziam.
     """
     if ramp is None:
@@ -330,7 +330,7 @@ def analyse_training(m: dict, flags: list[str], ln: str = "en") -> str | None:
 
     O modelo não interpreta nada. Deu-se-lhe uma vez os números crus e ele
     concluiu que HRV acima da base mais FC de repouso abaixo da base era
-    "desequilíbrio entre esforço e recuperação" — dois sinais bons lidos como
+    "desequilíbrio entre esforço e recuperação", dois sinais bons lidos como
     mau. Agora recebe o veredicto de cada métrica, feito em assess.py, e o
     seu trabalho é só escrevê-lo de forma corrida.
     """
@@ -452,7 +452,7 @@ def table(header: list[str], rows: list[list]) -> list[str]:
 def slow_down_rule(rules: dict, ln: str = "en") -> str:
     """A regra de travagem sai dos limiares, não do modelo.
 
-    Pedida ao modelo, a resposta saía circular — numa execução, 'o sinal para
+    Pedida ao modelo, a resposta saía circular, numa execução, 'o sinal para
     abrandar é a ausência de bandeiras de recuperação'. Os números estão no
     workouts.yaml e não têm de ser adivinhados.
     """
@@ -564,11 +564,11 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
 def idioma_do_perfil() -> str:
     """A língua sai do perfil; COACH_LANG serve para testar."""
     if os.environ.get("COACH_LANG"):
-        return escolher(os.environ["COACH_LANG"])
+        return pick(os.environ["COACH_LANG"])
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        import perfis
-        return escolher((perfis.ler(DATA_DIR) or {}).get("idioma"))
+        import profiles
+        return pick((profiles.read(DATA_DIR) or {}).get("language"))
     except Exception:                            # noqa: BLE001
         return "en"
 

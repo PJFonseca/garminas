@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from html import escape
 
-from idioma import t as _t
+from language import t as _t
 
 # Cada figura desenha duas posições, a de partida e a de chegada, porque um
 # exercício é um movimento e uma pose só conta metade.

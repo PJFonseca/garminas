@@ -16,7 +16,7 @@ O texto sai no idioma do perfil. Os limiares não mudam com a língua.
 
 from __future__ import annotations
 
-from idioma import t
+from language import t
 
 ESTADOS = {
     "bom":     ("good",     "●", "estado.bom"),

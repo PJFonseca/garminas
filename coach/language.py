@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Idioma do relatório, tirado da conta Garmin de cada pessoa.
+"""Report language, taken from each person's Garmin account.
 
-A conta traz um locale. Se disser português, o relatório sai em português; em
-qualquer outro caso sai em inglês, que é o que a Garmin usa por omissão e o
-que serve a mais gente.
+The account carries a locale. If it says Portuguese, the report comes out in
+Portuguese; in any other case it comes out in English, which is what Garmin
+defaults to and what serves the most people.
 
-Cada perfil tem o seu idioma, porque numa casa pode haver contas diferentes.
-COACH_LANG força um idioma, para testar.
+Language is per profile, because a household can hold accounts set
+differently. COACH_LANG forces one, for testing.
+
+English and Portuguese live here, because English is the default and
+Portuguese is the language this was written in. The rest live in
+translations.py as flat dictionaries of the same keys. Anything missing falls
+back to English, so a half-finished translation never breaks the page.
 """
 
 from __future__ import annotations
@@ -14,20 +19,30 @@ from __future__ import annotations
 import os
 
 APP = "GarmiNAS"
-IDIOMAS = ("en", "pt")
+
+try:
+    from translations import ALL as OTHERS
+except ImportError:                  # without the file, English and Portuguese
+    OTHERS: dict[str, dict[str, str]] = {}
 
 
-def escolher(idioma: str | None = None) -> str:
-    """Normaliza o locale da conta para uma das línguas que existem aqui.
+def languages() -> list[str]:
+    return ["en", "pt"] + sorted(OTHERS)
 
-    A Garmin devolve coisas como "pt", "pt-BR", "en-GB" ou "zh-CN". Interessa
-    só a parte antes do traço; o que não estiver traduzido cai para inglês.
+
+def pick(language: str | None = None) -> str:
+    """Normalises the account locale to one of the languages that exist here.
+
+    Garmin returns things like "pt", "pt-BR", "en-GB" or "zh-CN". Only the part
+    before the dash matters; anything untranslated falls back to English.
     """
-    pedido = (idioma or os.environ.get("COACH_LANG") or "en").lower()
-    base = pedido.replace("_", "-").split("-")[0]
-    return base if base in linguas() else "en"
+    asked = (language or os.environ.get("COACH_LANG") or "en").lower()
+    base = asked.replace("_", "-").split("-")[0]
+    return base if base in languages() else "en"
 
 
+# Each entry is (Portuguese, English). Both are written out because these two
+# are the languages the code itself falls back on.
 F = {
     # ── estados das leituras ────────────────────────────────────────────────
     "estado.bom": ("bom", "good"),
@@ -298,6 +313,16 @@ F.update({
     "int.dura": ("dura", "hard"), "int.moderada": ("moderada", "moderate"),
     "int.leve": ("leve", "easy"), "int.descanso": ("descanso", "rest"),
     # landing e configuração
+    "ui.a_configurar": ("A configurar", "Setting up"),
+    "ui.comecar": ("A começar", "Starting"),
+    "ui.registo": ("Registo", "Log"),
+    "ui.codigo": ("Código de verificação", "Verification code"),
+    "ui.codigo_sub": ("A Garmin pediu o código de dois passos. Escreve-o aqui.",
+                      "Garmin asked for the two-factor code. Type it here."),
+    "ui.enviar_codigo": ("Enviar código", "Send code"),
+    "ui.ver_relatorio": ("Ver o relatório", "See the report"),
+    "ui.aguardar": ("a aguardar", "waiting"),
+    "ui.falhou": ("Falhou", "Failed"),
     "ui.quem": ("Quem vai treinar?", "Who is training?"),
     "ui.quem_sub": ("Cada pessoa tem a sua conta Garmin e o seu relatório.",
                     "Each person has their own Garmin account and their own report."),
@@ -316,24 +341,15 @@ F.update({
 # Outras línguas entram aqui, como dicionários planos das mesmas chaves. O que
 # faltar cai para inglês, por isso uma tradução incompleta nunca parte a
 # página: mostra parte em inglês e o resto na língua da pessoa.
-try:
-    from traducoes import TODAS as OUTRAS
-except ImportError:                      # sem o ficheiro, ficam inglês e português
-    OUTRAS: dict[str, dict[str, str]] = {}
-
-
-def linguas() -> list[str]:
-    return ["en", "pt"] + sorted(OUTRAS)
-
-
-def t(chave: str, idioma: str = "en", **kw) -> str:
-    idioma = (idioma or "en").lower()
-    texto = None
-    if idioma in OUTRAS:
-        texto = OUTRAS[idioma].get(chave)
-    if texto is None:
-        par = F.get(chave)
-        if not par:
-            return chave
-        texto = par[0] if idioma == "pt" else par[1]
-    return texto.format(**kw) if kw else texto
+def t(key: str, language: str = "en", **kw) -> str:
+    """One phrase, in the given language, with English as the fallback."""
+    language = (language or "en").lower()
+    text = None
+    if language in OTHERS:
+        text = OTHERS[language].get(key)
+    if text is None:
+        pair = F.get(key)
+        if not pair:
+            return key
+        text = pair[0] if language == "pt" else pair[1]
+    return text.format(**kw) if kw else text

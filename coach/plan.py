@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from idioma import t as _t
+from language import t as _t
 
 CTL_TC, ATL_TC = 42, 7
 
@@ -218,7 +218,7 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
 
     # O tecto semanal sai do maior entre a última semana e a média do mês. Só
     # com a última semana, uma semana de descanso passaria a ser o novo normal
-    # e o plano seguinte encolhia para quase nada — visto acontecer: 111
+    # e o plano seguinte encolhia para quase nada, visto acontecer: 111
     # minutos numa semana leve davam um tecto de 122, e o plano saía com oito
     # dias de descanso em catorze.
     mes = m.get("month", {})

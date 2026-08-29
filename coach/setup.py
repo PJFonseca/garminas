@@ -10,7 +10,7 @@ autentica na Garmin e puxa o histórico, e gera o primeiro relatório. A pessoa
 só fornece os acessos; o resto é automático.
 
 O catálogo é deliberadamente curto. Isto corre em CPU, muitas vezes num NAS
-de dois núcleos, e a diferença entre um 4B e um 8B não é qualidade a mais —
+de dois núcleos, e a diferença entre um 4B e um 8B não é qualidade a mais -
 é passar de dois minutos para um quarto de hora por relatório.
 
 O ficheiro é gravado sempre como model.gguf, para que o docker-compose.yml
@@ -34,7 +34,7 @@ TARGET = MODELS_DIR / "model.gguf"
 META = MODELS_DIR / "model.json"
 
 # Todos verificados a 2026-08-29, e todos sem modo de raciocínio. Um modelo
-# que "pensa" antes de responder — o Qwen3 8B, por exemplo — enche o contexto
+# que "pensa" antes de responder, o Qwen3 8B, por exemplo, enche o contexto
 # com o raciocínio e rebenta com "Context size has been exceeded" antes de
 # escrever a resposta. Testado, não suposto.
 #
@@ -95,13 +95,13 @@ def choose() -> dict | None:
         sys.exit(f"COACH_MODEL={preset} não corresponde a nenhuma opção do catálogo.")
 
     print("\nQue modelo queres usar para redigir os relatórios?\n")
-    print("  Quanto maior, melhor escreve — e mais devagar. Numa NAS de dois")
+    print("  Quanto maior, melhor escreve, e mais devagar. Numa NAS de dois")
     print("  núcleos fica-te pelos 4B; num PC com 8 ou mais, sobe.\n")
     for i, m in enumerate(CATALOGUE, 1):
         print(f"  {i}. {m['name']:<24} {human(m['mib']):>9}")
         print(f"     {m['note']}")
     print("\n  5. Outro URL de um ficheiro .gguf")
-    print("  6. Nenhum — o relatório sai só com números, sem texto redigido\n")
+    print("  6. Nenhum, o relatório sai só com números, sem texto redigido\n")
 
     while True:
         try:
@@ -199,7 +199,7 @@ def garmin_step() -> bool:
 Agora a ligação à Garmin Connect.
 
 A seguir vais escrever o teu email e palavra-passe da Garmin. São pedidos pela
-ferramenta upstream, que os guarda em /data — nunca passam por aqui nem saem
+ferramenta upstream, que os guarda em /data, nunca passam por aqui nem saem
 desta máquina. Se tiveres autenticação em dois passos, o código é pedido neste
 mesmo terminal.
 

@@ -10,7 +10,7 @@
 set -e
 
 # O container corre como root, por isso tudo o que escreve em /data e /models
-# fica com dono root — e depois nem o download de um modelo a partir do host
+# fica com dono root, e depois nem o download de um modelo a partir do host
 # funciona. Com PUID/PGID definidos, devolve-se a posse ao arranque.
 if [ -n "${PUID:-}" ] && [ -n "${PGID:-}" ]; then
   for d in /data /models; do
@@ -39,10 +39,10 @@ case "${1:-cron}" in
     if [ -n "${PERFIL:-}" ]; then
       exec env GARMIN_DATA_DIR="/data/perfis/${PERFIL}" python3 /opt/coach/coach.py
     fi
-    exec /perfis.sh python3 /opt/coach/coach.py
+    exec /profiles.sh python3 /opt/coach/coach.py
     ;;
   sync-todos)
-    exec /perfis.sh xvfb-run -a garmin-givemydata
+    exec /profiles.sh xvfb-run -a garmin-givemydata
     ;;
   metrics)
     shift

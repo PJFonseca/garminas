@@ -15,8 +15,8 @@ from __future__ import annotations
 from html import escape
 
 from assess import ESTADOS, desporto
-from idioma import t as _t
-from figuras import CSS as FIG_CSS, exercicios, linha_tempo
+from language import t as _t
+from figures import CSS as FIG_CSS, exercicios, linha_tempo
 
 CSS = """
 .viz { --s1:#2a78d6; --seq-leve:#9ec5f4; --seq-med:#3987e5; --seq-duro:#1c5cab;
@@ -346,7 +346,7 @@ def report_html(d: dict) -> str:
     m, plan = d["metrics"], d["plan"]
     load, rec, month = m["load"], m["recovery"], m["month"]
     hoje = d["generated"]
-    ln = d.get("idioma") or "en"
+    ln = d.get("language") or "en"
     fichas = d.get("assessment") or []
     cls, estado, icone = _tsb_state(load["tsb"])
 
@@ -381,7 +381,7 @@ def report_html(d: dict) -> str:
                  f'<span class=muted>{_t("ui.plano_amanha", ln)}</span>')
     else:
         p0 = plan["days"][0]
-        dur = f' — {p0["duration_min"]} min' if p0["duration_min"] else ""
+        dur = f', {p0["duration_min"]} min' if p0["duration_min"] else ""
         agora = f'<b>Hoje: {escape(p0["name"])}</b>{dur}'
 
     flags = ""

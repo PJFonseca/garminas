@@ -2,7 +2,7 @@
 """Calcula métricas de treino a partir da base de dados do garmin-givemydata.
 
 Tudo o que é número é calculado aqui, em SQL e Python. O modelo de linguagem
-nunca vê aritmética por fazer — recebe apenas resultados prontos. Um modelo de
+nunca vê aritmética por fazer, recebe apenas resultados prontos. Um modelo de
 4B erra contas com frequência, e métricas de saúde inventadas seriam pior do
 que não ter métrica nenhuma.
 """

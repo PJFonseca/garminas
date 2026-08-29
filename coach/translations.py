@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""As mesmas frases noutras línguas.
+"""The same phrases in other languages.
 
-O inglês e o português vivem no idioma.py, porque são a omissão e a língua em
-que isto foi escrito. As restantes ficam aqui, cada uma num dicionário plano
-das mesmas chaves. O que faltar cai para inglês, por isso uma tradução a meio
-nunca parte a página.
+English and Portuguese live in language.py, because English is the default and
+Portuguese is the language this was written in. The rest live here, each one a
+flat dictionary of the same keys. Anything missing falls back to English, so a
+half-finished translation never breaks the page.
 
-Os marcadores entre chavetas têm de sobreviver à tradução: {delta}, {base},
-{media}, {n}. O teste no fim do ficheiro verifica isso.
+The braces have to survive translation: {delta}, {base}, {media}, {n}. There is
+a check for that in the test suite.
 """
 
 ES = {
@@ -690,4 +690,4 @@ ZH = {'estado.bom': '良好',
       'ui.sem_relatorios': '还没有报告',
       'ui.sem_relatorios_sub': '{nome} 的首次同步尚未运行。'}
 
-TODAS = {"es": ES, "fr": FR, "de": DE, "it": IT, "zh": ZH}
+ALL = {"es": ES, "fr": FR, "de": DE, "it": IT, "zh": ZH}

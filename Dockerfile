@@ -37,8 +37,8 @@ RUN pip install --no-cache-dir garmin-givemydata pyyaml flask markdown
 
 COPY coach/ /opt/coach/
 COPY entrypoint.sh /entrypoint.sh
-COPY perfis.sh /perfis.sh
-RUN chmod +x /opt/coach/*.py /entrypoint.sh /perfis.sh
+COPY profiles.sh /profiles.sh
+RUN chmod +x /opt/coach/*.py /entrypoint.sh /profiles.sh
 
 WORKDIR /data
 COPY crontab /etc/crontab.garmin
