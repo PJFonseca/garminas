@@ -351,7 +351,7 @@ def slow_down_rule(rules: dict) -> str:
 
 
 def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
-           review: str | None, rules: dict) -> str:
+           review: str | None, rules: dict, objetivo: dict | None = None) -> str:
     load, rec, month = m["load"], m["recovery"], m["month"]
     today = plan["days"][0]
 
@@ -401,6 +401,8 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += [f"## A seguir: {quando}, {seguinte['date']}", "",
               f"**{seguinte['name']}**"
               + (f", {seguinte['duration_min']} min" if seguinte["duration_min"] else "") + "", ""]
+    if seguinte.get("ritmo"):
+        lines += [f"**{seguinte['ritmo']}**", ""]
     if seguinte.get("description"):
         lines += [seguinte["description"], ""]
     if seguinte.get("motivo"):
@@ -423,7 +425,7 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += ["", f"{s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos. "
                   f"CTL projetado de {s['ctl_start']} para {s['ctl_end']}, "
                   f"TSB no fim {s['tsb_end']}.", ""]
-    if (cfg.get("objetivo") or {}).get("perder_peso"):
+    if (objetivo or {}).get("perder_peso"):
         lines += ["Com o objetivo de perder peso, os dias de descanso a mais passam a caminhada: "
                   "gasta energia e quase não cobra recuperação. A intensidade fica na mesma. "
                   "O treino ajuda, mas a diferença maior vem da alimentação, que este relatório "
@@ -458,7 +460,8 @@ def main() -> None:
     review = review_and_recommend(m, plan, flags)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    report = render(m, flags, plan, analysis, review, cfg["recovery_flags"])
+    report = render(m, flags, plan, analysis, review, cfg["recovery_flags"],
+                    cfg.get("objetivo"))
     stamp = date.today().isoformat()
     (OUT_DIR / f"{stamp}.md").write_text(report)
     (OUT_DIR / "latest.md").write_text(report)

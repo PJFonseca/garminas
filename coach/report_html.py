@@ -37,7 +37,10 @@ CSS = """
 .seguir h2 { margin:.2rem 0 .1rem; padding:0; border:0; font-size:1.45rem; }
 .seguir .dur { font-size:.95rem; color:var(--dim); }
 .seguir .como { margin:.7rem 0 0; font-size:1rem; max-width:68ch; }
+.seguir .ritmo { margin:.6rem 0 0; padding:.6rem .8rem; border-radius:8px; max-width:68ch;
+  background:color-mix(in srgb, var(--s1) 12%, transparent); font-size:1rem; font-weight:600; }
 .seguir .porque { margin:.55rem 0 0; font-size:.87rem; color:var(--dim); max-width:68ch; }
+.day .ritmo { font-size:.8rem; margin-top:.35rem; font-weight:600; }
 .seguir .porque::before { content:"Porquê esta: "; }
 .day .desc { font-size:.76rem; color:var(--dim); margin-top:.3rem; line-height:1.4; }
 .today b { font-size:1.05rem; }
@@ -92,7 +95,7 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
   opacity:0; pointer-events:none; transition:opacity .12s; z-index:2; }
 .col:hover .tip, .day:hover .tip { opacity:1; }
 
-.plan { display:grid; grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr)); gap:.5rem; margin:1rem 0 .5rem; }
+.plan { display:grid; grid-template-columns:repeat(auto-fill,minmax(15rem,1fr)); gap:.6rem; margin:1rem 0 .5rem; }
 .day { position:relative; border:1px solid var(--line); border-left:3px solid var(--line); border-radius:8px;
   padding:.55rem .7rem; }
 .day.leve  { border-left-color:var(--seq-leve); }
@@ -264,7 +267,8 @@ def _plan(days: list[dict], hoje: str) -> str:
             f'<div class=d>{d["weekday"][:3]} {d["date"][8:]}/{d["date"][5:7]}</div>'
             f'<div class=s>{escape(d["name"])}</div>'
             f'<div class=m>{minutos}</div>'
-            f'<div class=desc>{escape(d.get("description", ""))}</div></div>')
+            + (f'<div class=ritmo>{escape(d["ritmo"])}</div>' if d.get("ritmo") else "")
+            + f'<div class=desc>{escape(d.get("description", ""))}</div></div>')
     return f'<div class=plan>{"".join(cards)}</div>'
 
 
@@ -287,9 +291,10 @@ def _seguir(dia: dict, hoje: str) -> str:
     quando = "Hoje" if dia["date"] == hoje else f'Amanhã, {dia["weekday"]}'
     dur = f' <span class=dur>{dia["duration_min"]} min</span>' if dia["duration_min"] else ""
     como = f'<p class=como>{escape(dia.get("description", ""))}</p>' if dia.get("description") else ""
+    ritmo = f'<p class=ritmo>{escape(dia["ritmo"])}</p>' if dia.get("ritmo") else ""
     porque = f'<p class=porque>{escape(dia["motivo"])}</p>' if dia.get("motivo") else ""
     return (f'<div class=seguir><div class=quando>{quando}, {dia["date"]}</div>'
-            f'<h2>{escape(dia["name"])}{dur}</h2>{como}{porque}</div>')
+            f'<h2>{escape(dia["name"])}{dur}</h2>{ritmo}{como}{porque}</div>')
 
 
 def report_html(d: dict) -> str:
@@ -362,21 +367,22 @@ def report_html(d: dict) -> str:
   <div class=painel>
     <h2>Análise</h2>
     {_prose(d.get("analysis"))}
+  </div>
+  <div class=painel>
     <h2>Carga por semana</h2>
     {_chart(month["weeks"])}
     <p class=legend>Progressão: <b>{escape(d["ramp_verdict"])}</b>. {month["hard_sessions"]}
       {"sessão dura" if month["hard_sessions"] == 1 else "sessões duras"} e
       {month["rest_days"]} dias sem treino em 28. Sessão mais longa {month["longest_min"]} min.</p>
   </div>
-  <div class=painel>
-    <h2>Plano para os próximos {len(plan["days"])} dias</h2>
-    {_plan(plan["days"], hoje)}
-    <p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
-      CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
-      Calculado a partir das regras, não escrito pelo modelo.</p>
-    {objetivo_html}
-  </div>
 </div>
+
+<h2>Plano para os próximos {len(plan["days"])} dias</h2>
+{_plan(plan["days"], hoje)}
+<p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
+  CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
+  Calculado a partir das regras, não escrito pelo modelo.</p>
+{objetivo_html}
 
 <div class=painéis>
   <div class=painel>

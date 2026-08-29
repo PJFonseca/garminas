@@ -85,6 +85,17 @@ def porque_nao(w: dict, tsb: float, ctl: float, dsh: int | None, flagged: bool) 
     return ""
 
 
+def ritmo_de(w: dict, paces: dict) -> str:
+    """Preenche a instrução de velocidade com os ritmos da pessoa."""
+    modelo = w.get("ritmo")
+    if not modelo or not paces.get("has_data"):
+        return ""
+    try:
+        return modelo.format(**{k: v for k, v in paces.items() if isinstance(v, (int, float))})
+    except KeyError:
+        return ""
+
+
 def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
                skip_today: bool = False, objetivo: dict | None = None) -> dict:
     """Devolve o plano dia a dia mais um resumo do que ele provoca na carga."""
@@ -173,6 +184,7 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
             "id": choice["id"],
             "name": choice["name"],
             "description": " ".join(choice.get("description", "").split()),
+            "ritmo": ritmo_de(choice, m.get("paces", {})),
             "motivo": motivo,
             "duration_min": choice.get("duration_min"),
             "load_est": est,

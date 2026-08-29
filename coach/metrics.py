@@ -238,6 +238,56 @@ def month_review(acts: list[dict], today: date) -> dict:
     }
 
 
+def percentil(valores: list[float], q: float) -> float:
+    ordenados = sorted(valores)
+    if not ordenados:
+        return 0.0
+    i = min(len(ordenados) - 1, max(0, round(q * (len(ordenados) - 1))))
+    return ordenados[i]
+
+
+def paces(acts: list[dict]) -> dict:
+    """Velocidades de passadeira tiradas do próprio historial.
+
+    Recomendar "8 km/h" a alguém sem olhar para o que essa pessoa corre é um
+    palpite. Aqui ajusta-se uma reta entre frequência cardíaca média e
+    velocidade, e lê-se essa reta nas frequências que a pessoa costuma ter em
+    esforço fácil e em esforço forte. O resultado nunca sai do intervalo que
+    ela já correu.
+    """
+    corridas = [(a["avg_hr"], (a["distance_m"] / 1000) / (a["duration_s"] / 3600))
+                for a in acts
+                if a["avg_hr"] and a["distance_m"] > 500 and a["duration_s"] > 300
+                and "walk" not in a["sport"]]
+    caminhadas = [(a["distance_m"] / 1000) / (a["duration_s"] / 3600)
+                  for a in acts
+                  if "walk" in a["sport"] and a["distance_m"] > 500 and a["duration_s"] > 300]
+
+    if len(corridas) < 4:
+        return {"has_data": False}
+
+    hrs = [h for h, _ in corridas]
+    kmhs = [v for _, v in corridas]
+    n = len(corridas)
+    mh, mv = sum(hrs) / n, sum(kmhs) / n
+    denom = sum((h - mh) ** 2 for h in hrs)
+    slope = sum((h - mh) * (v - mv) for h, v in corridas) / denom if denom else 0.0
+
+    baixo, alto = min(kmhs), max(kmhs)
+
+    def em(hr_alvo: float) -> float:
+        return round(min(alto, max(baixo, mv + slope * (hr_alvo - mh))) * 2) / 2
+
+    return {
+        "has_data": True,
+        "facil": em(percentil(hrs, 0.35)),
+        "forte": em(percentil(hrs, 0.9)),
+        "tempo": round((em(percentil(hrs, 0.35)) + em(percentil(hrs, 0.9))) / 2 * 2) / 2,
+        "caminhada": round((sorted(caminhadas)[len(caminhadas) // 2] if caminhadas else 5.5) * 2) / 2,
+        "sessoes": n,
+    }
+
+
 def body(con, spec, today: date) -> dict:
     """Peso e composição corporal, com a tendência recente.
 
@@ -356,6 +406,7 @@ def build(con) -> dict:
         "by_sport_28d": by_sport,
         "recent": recent_sessions(acts),
         "body": body(con, spec.get("weight", {"table": []}), today),
+        "paces": paces(acts),
         "windows": {"7d": summarise_window(acts, today, 7),
                     "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),

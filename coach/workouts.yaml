@@ -8,6 +8,10 @@
 #   ctl_min                  base aeróbia mínima antes de permitir a sessão
 #   requires_fresh           exige que não haja bandeira de recuperação ativa
 #
+# ritmo é a instrução de velocidade. Os marcadores {facil}, {forte}, {tempo} e
+# {caminhada} são preenchidos com as velocidades calculadas a partir do
+# historial da própria pessoa, não com valores de tabela.
+#
 # load_est é a carga estimada da sessão, usada para projetar CTL/ATL/TSB ao
 # longo do plano. Não precisa de ser exata; precisa de ser coerente entre
 # sessões, para que a progressão simulada faça sentido.
@@ -43,6 +47,7 @@ workouts:
   - id: easy_walk
     name: Caminhada longa
     load_est: 20
+    ritmo: "Anda a {caminhada} km/h, sem inclinação."
     recovery_safe: true
     duration_min: 45
     description: Ritmo conversável, zona 1. Mantém o hábito sem adicionar carga.
@@ -50,6 +55,7 @@ workouts:
   - id: easy_run
     name: Corrida fácil
     load_est: 45
+    ritmo: "Passadeira a {facil} km/h. Se a conversa começar a custar, baixa meio km/h."
     recovery_safe: true
     duration_min: 35
     tsb_min: -20
@@ -60,6 +66,7 @@ workouts:
   - id: treadmill_base
     name: Passadeira contínua
     load_est: 50
+    ritmo: "Passadeira a {facil} km/h com 1% de inclinação."
     recovery_safe: true
     duration_min: 40
     tsb_min: -20
@@ -70,6 +77,7 @@ workouts:
   - id: treadmill_intervals_short
     name: Intervalos curtos na passadeira
     load_est: 85
+    ritmo: "Aquecimento a {facil} km/h. Cada minuto forte a {forte} km/h, e a recuperação a andar a {caminhada} km/h."
     duration_min: 35
     tsb_min: -10
     days_since_hard_min: 2
@@ -81,6 +89,7 @@ workouts:
   - id: treadmill_intervals_long
     name: Intervalos longos na passadeira
     load_est: 120
+    ritmo: "Aquecimento a {facil} km/h. Os 3 minutos fortes a {forte} km/h, os 2 minutos fáceis a {facil} km/h."
     duration_min: 50
     tsb_min: -5
     ctl_min: 25
@@ -93,6 +102,7 @@ workouts:
   - id: tempo
     name: Contínuo em ritmo controlado
     load_est: 105
+    ritmo: "Os 20 minutos do meio a {tempo} km/h. Fica entre o fácil e o forte, incómodo mas sustentável."
     duration_min: 45
     tsb_min: -8
     ctl_min: 30
@@ -105,6 +115,7 @@ workouts:
   - id: long_run
     name: Corrida longa
     load_est: 95
+    ritmo: "Tudo a {facil} km/h ou menos. Se tiveres de abrandar no fim, abranda."
     duration_min: 75
     tsb_min: -12
     ctl_min: 25
