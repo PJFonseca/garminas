@@ -347,7 +347,18 @@ pre#log { background:color-mix(in srgb, var(--fg) 5%, transparent); border:1px s
 .err { color:var(--warn); font-weight:600; }
 .note-box { border-left:3px solid var(--line); padding:.3rem 0 .3rem .9rem; color:var(--dim); font-size:.9rem; }
 nav { display:flex; gap:1rem; font-size:.9rem; margin-bottom:1.5rem; }
-nav a { color:var(--accent); text-decoration:none; }
+
+/* Sem isto os links herdam o roxo de "visitado" do browser, que sobre fundo
+   escuro quase não se vê. */
+a, a:visited { color:var(--accent); text-decoration-color:color-mix(in srgb, var(--accent) 45%, transparent); }
+a:hover { text-decoration-thickness:2px; }
+nav a { text-decoration:none; }
+
+.anteriores { display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0 0; }
+.anteriores a { display:inline-block; padding:.3rem .7rem; border:1px solid var(--line);
+  border-radius:99px; font-size:.85rem; text-decoration:none; font-variant-numeric:tabular-nums; }
+.anteriores a:hover { border-color:var(--accent); }
+.anteriores .hoje { border-color:var(--accent); font-weight:600; }
 hr { border:0; border-top:1px solid var(--line); margin:2rem 0; }
 """ + VIZ_CSS
 
@@ -503,10 +514,14 @@ def report(day: str | None = None):
         corpo = markdown.markdown(fallback.read_text(), extensions=["tables"])
         corpo = corpo.replace("<table>", "<div class=wrap><table>").replace("</table>", "</table></div>")
 
-    older = " · ".join(f'<a href="/relatorio/{d}">{d}</a>' for d in days[:14])
+    hoje = date.today().isoformat()
+    older = "".join(
+        f'<a class="{"hoje" if d == hoje else ""}" href="/relatorio/{d}">'
+        f'{d}{" (hoje)" if d == hoje else ""}</a>' for d in days[:14])
     return page("Treino — garmin-nas",
                 f'<nav><a href="/configurar">Configurar</a></nav>{corpo}'
-                f'<hr><h3>Anteriores</h3><p class=legend>{older or "nenhum"}</p>',
+                f'<hr><h3>Relatórios anteriores</h3>'
+                f'<div class=anteriores>{older or "<span class=legend>nenhum</span>"}</div>',
                 """<script>
 document.querySelectorAll('.day[data-dia]').forEach(c => {
   const abrir = () => document.getElementById('dia-' + c.dataset.dia)?.showModal();
