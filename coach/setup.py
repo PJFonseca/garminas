@@ -109,8 +109,12 @@ def choose() -> dict | None:
             print("Opção inválida.")
 
 
-def download(model: dict) -> bool:
-    """Descarrega com retoma. Um 4B são 2,4 GB e as ligações caem."""
+def download(model: dict, on_progress=None) -> bool:
+    """Descarrega com retoma. Um 4B são 2,4 GB e as ligações caem.
+
+    on_progress(feitos, total) permite à interface web mostrar a barra; sem
+    ela imprime no terminal, como antes.
+    """
     part = TARGET.with_suffix(".gguf.part")
     done = part.stat().st_size if part.exists() else 0
 
@@ -131,10 +135,13 @@ def download(model: dict) -> bool:
                     done += len(chunk)
                     pct = int(done * 100 / total) if total else 0
                     if pct != last and pct % 2 == 0:
-                        print(f"\r  {pct:3d}%  {human(done / 1048576)}", end="", flush=True)
+                        if on_progress:
+                            on_progress(done, total)
+                        else:
+                            print(f"\r  {pct:3d}%  {human(done / 1048576)}", end="", flush=True)
                         last = pct
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
-        print(f"\nDownload falhou: {exc}")
+        print(f"\nDownload falhou: {exc}", file=sys.stderr)
         print("O ficheiro parcial fica guardado; corre o setup outra vez para retomar.")
         return False
 

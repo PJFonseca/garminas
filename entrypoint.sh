@@ -5,6 +5,8 @@
 #   docker compose run --rm garmin auth     autenticar na Garmin (interativo)
 #   docker compose run --rm garmin report   gerar o relatório agora
 #
+# O serviço web corre o verbo 'web' e serve a configuração e os relatórios.
+#
 set -e
 
 case "${1:-cron}" in
@@ -18,6 +20,9 @@ case "${1:-cron}" in
   sync)
     shift
     exec xvfb-run -a garmin-givemydata "$@"
+    ;;
+  web)
+    exec python3 /opt/coach/web.py
     ;;
   report)
     exec python3 /opt/coach/coach.py

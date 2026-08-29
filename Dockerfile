@@ -33,7 +33,7 @@ RUN curl -fsSL -o /usr/local/bin/supercronic \
       "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64" \
     && chmod +x /usr/local/bin/supercronic
 
-RUN pip install --no-cache-dir garmin-givemydata pyyaml
+RUN pip install --no-cache-dir garmin-givemydata pyyaml flask markdown
 
 COPY coach/ /opt/coach/
 COPY entrypoint.sh /entrypoint.sh

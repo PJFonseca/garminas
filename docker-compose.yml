@@ -35,6 +35,32 @@ services:
     networks:
       - default
 
+  # Interface web: configurar numa página e ler os relatórios. Corre a mesma
+  # imagem, e precisa de memória partilhada porque é ela que abre o Chrome
+  # durante a primeira sincronização.
+  web:
+    image: garmin-nas:${GARMIN_IMAGE_TAG:-1.0}
+    pull_policy: never
+    container_name: garmin-web
+    restart: unless-stopped
+    command: ["web"]
+    shm_size: "1gb"
+    mem_limit: 2g
+    environment:
+      TZ: ${TZ:-Europe/Lisbon}
+      GARMIN_DATA_DIR: /data
+      LLM_URL: http://llm:8080/v1/chat/completions
+      WEB_HOST: ${WEB_HOST:-0.0.0.0}
+    ports:
+      # Acessível a partir de qualquer máquina da rede local. Para restringir
+      # ao próprio host, pôr WEB_BIND=127.0.0.1 no .env.
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8090}:8090"
+    volumes:
+      - ./data:/data:z
+      - ./models:/models:z
+    networks:
+      - default
+
   # Modelo local. Opcional, e por isso atrás de um profile: sem um .gguf em
   # ./models o llama.cpp entrava em ciclo de reinício. O relatório sai na mesma
   # quando o modelo não responde, apenas sem a parte redigida.
@@ -46,13 +72,20 @@ services:
     container_name: garmin-llm
     profiles: [llm]
     restart: unless-stopped
-    command: >
-      -m /models/${MODEL_FILE:-model.gguf}
-      --host 0.0.0.0
-      --port 8080
-      --ctx-size 2048
-      --threads ${LLM_THREADS:-4}
-      --n-predict 384
+    # Espera pelo ficheiro em vez de morrer e reiniciar em ciclo: quando a
+    # página web está a descarregar o modelo, ele ainda não existe.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        while [ ! -f /models/${MODEL_FILE:-model.gguf} ]; do
+          echo "à espera de /models/${MODEL_FILE:-model.gguf}"; sleep 10;
+        done;
+        exec /app/llama-server
+        -m /models/${MODEL_FILE:-model.gguf}
+        --host 0.0.0.0 --port 8080
+        --ctx-size 2048
+        --threads ${LLM_THREADS:-4}
+        --n-predict 384
     volumes:
       - ./models:/models:ro,z
     # A NAS tem 16 GB; o limite real são os 2 núcleos, daí um 4B.
