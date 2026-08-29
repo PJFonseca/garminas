@@ -628,10 +628,15 @@ def settings(slug: str):
 <p class=sub>{escape(person["name"])}</p>
 
 <form method=post action="/p/{slug}/settings">
-  <h2>{_t("ui.your_prompt", ln)}</h2>
-  <p class=note-box>{_t("ui.prompt_help", ln)}</p>
-  <textarea name=prompt rows=6 placeholder="{escape(_t("ui.prompt_example", ln))}"
-    >{escape(data.get("prompt") or "")}</textarea>
+  <h2>{_t("ui.your_style", ln)}</h2>
+  <p class=note-box>{_t("ui.style_help", ln)}</p>
+  <textarea name=style rows=3 placeholder="{escape(_t("ui.style_example", ln))}"
+    >{escape(data.get("style") or "")}</textarea>
+
+  <h2>{_t("ui.your_notes", ln)}</h2>
+  <p class=note-box>{_t("ui.notes_help", ln)}</p>
+  <textarea name=notes rows=5 placeholder="{escape(_t("ui.notes_example", ln))}"
+    >{escape(data.get("notes") or data.get("prompt") or "")}</textarea>
 
   <h2>{_t("ui.language_choice", ln)}</h2>
   <select name=language>{opcoes}</select>
@@ -647,7 +652,9 @@ def save_settings(slug: str):
         return redirect("/")
     folder = Path(person["dir"])
     data = profiles.read(folder)
-    data["prompt"] = request.form.get("prompt", "").strip()[:2000]
+    data["style"] = request.form.get("style", "").strip()[:1000]
+    data["notes"] = request.form.get("notes", "").strip()[:2000]
+    data.pop("prompt", None)                 # campo único das versões anteriores
     escolha = request.form.get("language", "").strip()
     data["language_choice"] = escolha
     if escolha:

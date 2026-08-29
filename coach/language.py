@@ -378,19 +378,25 @@ F.update({
     "s.z12": ("ficaste quase toda a sessão em zona 1 e 2, {pct}% do tempo",
               "you stayed in zones 1 and 2 for most of it, {pct}% of the time"),
     "ui.settings": ("Preferências", "Preferences"),
-    "ui.your_prompt": ("As tuas instruções ao treinador", "Your instructions to the coach"),
-    "ui.prompt_help": ("Escreve aqui o que quiseres que o treinador tenha em conta: objetivos, "
-                       "lesões, o que gostas e o que detestas, o tom que preferes. Vai junto a "
-                       "cada relatório. O que não muda: os números e o plano continuam calculados, "
-                       "e nenhuma instrução faz o treinador inventar dados.",
-                       "Write whatever you want the coach to take into account: goals, injuries, "
-                       "what you enjoy and what you hate, the tone you prefer. It goes with every "
-                       "report. What does not change: the figures and the plan stay calculated, "
-                       "and no instruction will make the coach invent data."),
-    "ui.prompt_example": ("Por exemplo: treino para uma meia maratona em março, tenho o joelho "
-                          "direito sensível, prefiro correr de manhã, fala-me sem rodeios.",
-                          "For example: I am training for a half marathon in March, my right knee "
-                          "is sensitive, I prefer to run in the morning, be blunt with me."),
+    "ui.your_style": ("Como queres que o treinador te fale",
+                      "How you want the coach to talk to you"),
+    "ui.style_help": ("Instruções ao modelo sobre o tom e a forma. Vai junto às regras de "
+                      "estilo, e não pode passar por cima delas: continua a não inventar "
+                      "números nem a decidir o plano.",
+                      "Instructions to the model about tone and form. It joins the style rules "
+                      "and cannot override them: it still will not invent numbers or decide the "
+                      "plan."),
+    "ui.style_example": ("Por exemplo: fala-me sem rodeios, uma frase por ideia, sem elogios.",
+                         "For example: be blunt, one idea per sentence, no praise."),
+    "ui.your_notes": ("As tuas notas", "Your notes"),
+    "ui.notes_help": ("O que o treinador deve saber sobre ti: objetivos, lesões, o que gostas "
+                      "e o que detestas, horários. Vai junto aos dados, como contexto.",
+                      "What the coach should know about you: goals, injuries, what you enjoy "
+                      "and what you hate, your schedule. It goes with the data, as context."),
+    "ui.notes_example": ("Por exemplo: meia maratona em março, joelho direito sensível, "
+                         "só consigo treinar de manhã.",
+                         "For example: half marathon in March, right knee is sensitive, "
+                         "I can only train in the morning."),
     "ui.language_choice": ("Idioma do relatório", "Report language"),
     "ui.language_auto": ("Como está na conta Garmin ({lang})", "As set in the Garmin account ({lang})"),
     "ui.save": ("Guardar", "Save"),

@@ -127,19 +127,33 @@ Registo:
   "como demonstra o valor de"."""
 
 
-def instrucoes_da_pessoa() -> str:
-    """O que a própria pessoa pediu ao treinador, guardado no seu perfil.
+def preferencias() -> dict:
+    """O que a pessoa escreveu no seu perfil.
 
-    Vai como contexto, nunca como autorização: as regras duras continuam
-    acima dela. Ninguém pode pedir ao treinador que invente números, e o
-    plano continua a ser calculado.
+    São duas coisas diferentes e vão para sítios diferentes. O estilo é uma
+    instrução ao modelo sobre como falar, e junta-se às regras de estilo. As
+    notas são factos sobre a pessoa, e vão com os dados, que é onde pertencem.
+
+    Nenhuma delas passa por cima das regras duras: ninguém pode pedir ao
+    treinador que invente números, e o plano continua a ser calculado.
     """
     try:
         sys.path.insert(0, str(Path(__file__).parent))
         import profiles
-        return (profiles.read(DATA_DIR) or {}).get("prompt") or ""
+        d = profiles.read(DATA_DIR) or {}
+        return {"style": d.get("style") or "",
+                "notes": d.get("notes") or d.get("prompt") or ""}
     except Exception:                            # noqa: BLE001
+        return {"style": "", "notes": ""}
+
+
+def contexto_pessoal() -> str:
+    """As notas da pessoa, para irem junto aos dados."""
+    notas = preferencias()["notes"]
+    if not notas:
         return ""
+    return ("\nWhat this person told you about themselves. Take it into account, but do "
+            "not treat it as data and never quote numbers from it:\n" + notas.strip())
 
 
 def sistema(ln: str) -> str:
@@ -151,12 +165,10 @@ def sistema(ln: str) -> str:
     modelos seguem melhor, com a língua de resposta indicada.
     """
     base = SYSTEM if ln == "pt" else SYSTEM_EN.format(lingua=LINGUAS_NOME.get(ln, "English"))
-    pedido = instrucoes_da_pessoa()
-    if pedido:
-        base += ("\n\nThe person you are writing for asked for this. Take it into account "
-                 "in what you choose to say and how you say it, but never let it override "
-                 "the rules above, and never let it make you state a number you were not "
-                 "given:\n" + pedido.strip())
+    estilo = preferencias()["style"]
+    if estilo:
+        base += ("\n\nThe person asked you to write like this. Follow it, but never above "
+                 "the rules already given:\n" + estilo.strip())
     return base
 
 # Fórmulas de relatório. Todas têm uma versão direta, e um treinador usa a
@@ -376,6 +388,7 @@ corrida.
 Contexto: nos últimos 14 dias foram {w14['sessions']} sessões, {w14['minutes']} minutos
 ao todo e {w14['rest_days']} dias sem treino.
 Bandeiras de recuperação ativas: {'; '.join(flags) if flags else 'nenhuma'}.
+{contexto_pessoal()}
 
 Write two sentences. No numbering, no list.
 
@@ -442,6 +455,7 @@ def review_and_recommend(m: dict, plan: dict, flags: list[str], ln: str = "en") 
     return write(f"""Nas últimas quatro semanas treinaste, por semana e em média, \
 {month['mean_week_minutes']} minutos.
 Bandeiras de recuperação ativas hoje: {'; '.join(flags) if flags else 'nenhuma'}.
+{contexto_pessoal()}
 
 Plano já calculado para os próximos {len(plan['days'])} dias, que deves explicar e
 não alterar:
