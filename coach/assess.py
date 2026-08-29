@@ -244,6 +244,28 @@ def peso(b: dict, ln: str, alvo=(-0.75, -0.25)) -> dict | None:
               acao)
 
 
+def efficiency(e: dict, ln: str) -> dict | None:
+    """Am I improving? The honest answer, with its caveats attached."""
+    if not e.get("has_data"):
+        return None
+    pct = e["pct"]
+    if pct >= 5:
+        estado, leitura, acao = "bom", t("l.eff.much_better", ln, pct=f"{pct:+.1f}"), t("ac.eff.keep", ln)
+    elif pct >= 2:
+        estado, leitura, acao = "bom", t("l.eff.better", ln, pct=f"{pct:+.1f}"), ""
+    elif pct > -2:
+        estado, leitura, acao = "bom", t("l.eff.flat", ln), ""
+    elif pct > -5:
+        estado, leitura, acao = "atencao", t("l.eff.worse", ln, pct=f"{pct:.1f}"), t("ac.eff.check", ln)
+    else:
+        estado, leitura, acao = "cuidado", t("l.eff.much_worse", ln, pct=f"{pct:.1f}"), t("ac.eff.check", ln)
+
+    return _v("eff", t("m.eff", ln), f"{pct:+.1f}%", "", estado, leitura,
+              t("g.eff", ln, n=e["n_recent"], m=e["n_before"]),
+              escala(-12, 12, [(-5, "cuidado"), (-2, "atencao"), (2, "bom"), (12, "bom")], pct),
+              t("a.eff", ln), acao)
+
+
 ORDEM = {"alerta": 0, "cuidado": 1, "atencao": 2, "bom": 3}
 
 
@@ -260,6 +282,9 @@ def assess(m: dict, ln: str = "en") -> list[dict]:
         sleep(rec["sleep_h_7d"], ln),
         days_since_hard(load["days_since_hard"], ln),
     ]
+    ficha_eff = efficiency(m.get("efficiency", {}), ln)
+    if ficha_eff:
+        fichas.append(ficha_eff)
     ficha_peso = peso(m.get("body", {}), ln)
     if ficha_peso:
         fichas.append(ficha_peso)

@@ -122,6 +122,8 @@ def load_activities(con, spec, since: date) -> list[dict]:
             "duration_s": (r["duration_s"] if "duration_s" in r.keys() else 0) or 0,
             "distance_m": (r["distance_m"] if "distance_m" in r.keys() else 0) or 0,
             "avg_hr": (r["avg_hr"] if "avg_hr" in r.keys() else None),
+            "max_hr": (r["max_hr"] if "max_hr" in r.keys() else None),
+            "id": (r["id"] if "id" in r.keys() else None),
             "load": float(load or 0),
         })
     return sorted(out, key=lambda a: a["date"])
@@ -342,6 +344,76 @@ def body(con, spec, today: date) -> dict:
     }
 
 
+def detalhe_sessao(con, activity_id) -> dict:
+    """Parciais, zonas cardíacas e tempo, para a sessão que acabou de ser feita.
+
+    Isto vive numas tabelas que o relatório nunca tinha aberto: activity_splits
+    traz um registo por quilómetro, activity_hr_zones traz os segundos em cada
+    zona com os respetivos limites, e activity_weather traz a temperatura, que
+    explica bastante de um ritmo mau num dia quente.
+    """
+    if activity_id is None:
+        return {}
+    saida: dict = {}
+
+    try:
+        linhas = con.execute(
+            "SELECT split_number, distance_meters, duration_seconds, average_hr, max_hr,"
+            " avg_cadence, calories FROM activity_splits WHERE activity_id = ?"
+            " ORDER BY split_number", (activity_id,)).fetchall()
+    except sqlite3.Error:
+        linhas = []
+    parciais = []
+    for r in linhas:
+        metros, segundos = r[1] or 0, r[2] or 0
+        if metros < 200 or not segundos:
+            continue                     # o resto do último quilómetro não conta
+        por_km = segundos / (metros / 1000)
+        parciais.append({
+            "n": r[0], "km": round(metros / 1000, 2),
+            "seconds": round(segundos),
+            # Segundos por quilómetro, não a duração bruta. O último parcial é
+            # quase sempre uma fração de quilómetro: comparar durações fazia o
+            # mais lento passar por mais rápido só por ser mais curto.
+            "pace_seconds": round(por_km),
+            "pace": f"{int(por_km // 60)}:{int(por_km % 60):02d}",
+            "kmh": round((metros / 1000) / (segundos / 3600), 1),
+            "hr": round(r[3]) if r[3] else None,
+            "max_hr": round(r[4]) if r[4] else None,
+            "cadence": round(r[5]) if r[5] else None,
+        })
+    if parciais:
+        saida["splits"] = parciais
+
+    try:
+        z = con.execute(
+            "SELECT zone1_seconds, zone2_seconds, zone3_seconds, zone4_seconds,"
+            " zone5_seconds, raw_json FROM activity_hr_zones WHERE activity_id = ?",
+            (activity_id,)).fetchone()
+    except sqlite3.Error:
+        z = None
+    if z:
+        limites = {}
+        try:
+            for bloco in json.loads(z[5] or "[]"):
+                limites[bloco.get("zoneNumber")] = bloco.get("zoneLowBoundary")
+        except (json.JSONDecodeError, TypeError):
+            pass
+        zonas = [{"n": i + 1, "seconds": round(z[i] or 0), "low": limites.get(i + 1)}
+                 for i in range(5)]
+        if sum(x["seconds"] for x in zonas):
+            saida["zones"] = zonas
+
+    try:
+        w = con.execute("SELECT temperature, humidity FROM activity_weather"
+                        " WHERE activity_id = ?", (activity_id,)).fetchone()
+    except sqlite3.Error:
+        w = None
+    if w and w[0] is not None:
+        saida["weather"] = {"temp": round(w[0]), "humidity": round(w[1]) if w[1] else None}
+    return saida
+
+
 def sessao_recente(acts: list[dict], ritmos: dict, today: date, ln: str = "en") -> dict:
     """Como correu a última sessão, comparada com as anteriores.
 
@@ -432,7 +504,94 @@ def sessao_recente(acts: list[dict], ritmos: dict, today: date, ln: str = "en") 
         "avg_hr": round(ultima["avg_hr"]) if ultima["avg_hr"] else None,
         "load": round(ultima["load"]),
         "notas": notas,
+        "max_hr": round(ultima["max_hr"]) if ultima.get("max_hr") else None,
+        "id": ultima.get("id"),
     }
+
+
+def eficiencia(acts: list[dict]) -> dict:
+    """Estás a melhorar? Ritmo à mesma frequência cardíaca.
+
+    O ritmo sozinho não responde: correr mais depressa com o coração a 170 não
+    é melhorar, é esforçar-se mais. O que mede progresso é a velocidade que se
+    consegue com o mesmo esforço, e é isso que este índice é, metros por minuto
+    a dividir pela frequência cardíaca média.
+
+    Não serve para tudo: calor, passadeira contra rua, e uma FC média puxada
+    por um único tiro deslocam o valor. Por isso compara-se a média de várias
+    sessões, nunca uma só.
+    """
+    validos = [
+        (a["date"], (a["distance_m"] / (a["duration_s"] / 60)) / a["avg_hr"])
+        for a in acts
+        if a["avg_hr"] and a["avg_hr"] > 80 and a["distance_m"] > 1000 and a["duration_s"] > 600
+    ]
+    if len(validos) < 8:
+        return {"has_data": False}
+
+    recentes = [v for _, v in validos[-5:]]
+    anteriores = [v for _, v in validos[-25:-5]]
+    if not anteriores:
+        return {"has_data": False}
+
+    agora = sum(recentes) / len(recentes)
+    antes = sum(anteriores) / len(anteriores)
+    pct = (agora / antes - 1) * 100
+
+    return {
+        "has_data": True,
+        "now": round(agora, 3),
+        "before": round(antes, 3),
+        "pct": round(pct, 1),
+        "n_recent": len(recentes),
+        "n_before": len(anteriores),
+        "series": [{"date": d.isoformat(), "ef": round(v, 3)} for d, v in validos[-20:]],
+    }
+
+
+def notas_do_detalhe(s: dict, ln: str) -> dict:
+    """Acrescenta às notas o que só os parciais e as zonas sabem.
+
+    O ritmo médio esconde a forma da sessão: 8:10 no primeiro quilómetro e
+    9:15 no último, com 6:23 pelo meio, não é a mesma coisa que seis
+    quilómetros iguais, e é isso que vale a pena dizer a quem correu.
+    """
+    from language import t as _t
+
+    if not s.get("has_data"):
+        return s
+    notas = s.get("notas") or []
+
+    parciais = s.get("splits") or []
+    # Ritmo é ritmo: um parcial de 600 metros compara-se com um de mil. O que
+    # não se compara é a duração bruta, que foi o erro anterior. Abaixo de 400
+    # metros é ruído e fica de fora.
+    inteiros = [p for p in parciais if p["km"] >= 0.4]
+    if len(inteiros) >= 3:
+        rapido = min(inteiros, key=lambda p: p["pace_seconds"])
+        ultimo = inteiros[-1]
+        if ultimo["pace_seconds"] > rapido["pace_seconds"] * 1.15:
+            notas.append(_t("s.faded", ln, last=ultimo["pace"], best=rapido["pace"]))
+        elif ultimo["pace_seconds"] <= rapido["pace_seconds"] * 1.02:
+            notas.append(_t("s.built", ln))
+
+    ef = s.get("_efficiency") or {}
+    if ef.get("has_data") and abs(ef["pct"]) >= 3:
+        chave = "s.eff" if ef["pct"] > 0 else "s.eff_down"
+        notas.append(_t(chave, ln, pct=f"{abs(ef['pct']):.1f}"))
+
+    zonas = s.get("zones") or []
+    total = sum(z["seconds"] for z in zonas)
+    if total:
+        z5 = next((z["seconds"] for z in zonas if z["n"] == 5), 0)
+        z12 = sum(z["seconds"] for z in zonas if z["n"] <= 2)
+        if z5 / total > 0.25:
+            notas.append(_t("s.z5", ln, min=round(z5 / 60), pct=round(z5 / total * 100)))
+        elif z12 / total > 0.6:
+            notas.append(_t("s.z12", ln, pct=round(z12 / total * 100)))
+
+    s["notas"] = notas
+    return s
 
 
 def build(con, ln: str = "en") -> dict:
@@ -501,7 +660,11 @@ def build(con, ln: str = "en") -> dict:
         "recent": recent_sessions(acts),
         "body": body(con, spec.get("weight", {"table": []}), today),
         "paces": paces(acts),
-        "sessao": sessao_recente(acts, paces(acts), today, ln),
+        "efficiency": eficiencia(acts),
+        "sessao": notas_do_detalhe(
+            {**sessao_recente(acts, paces(acts), today, ln),
+             **detalhe_sessao(con, (acts[-1].get("id") if acts else None)),
+             "_efficiency": eficiencia(acts)}, ln),
         "windows": {"7d": summarise_window(acts, today, 7),
                     "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),

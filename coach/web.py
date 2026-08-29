@@ -461,8 +461,10 @@ th,td { text-align:left; padding:.4rem .6rem; border-bottom:1px solid var(--line
 th { font-weight:600; color:var(--dim); font-size:.82rem; text-transform:uppercase; letter-spacing:.04em; }
 .wrap { overflow-x:auto; }
 label { display:block; margin:.9rem 0 .25rem; font-weight:600; font-size:.92rem; }
-input[type=text],input[type=email],input[type=password] { width:100%; padding:.55rem .7rem; font:inherit;
-  border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+input[type=text],input[type=email],input[type=password],textarea,select { width:100%;
+  padding:.55rem .7rem; font:inherit; border:1px solid var(--line); border-radius:6px;
+  background:var(--bg); color:var(--fg); }
+textarea { resize:vertical; line-height:1.5; }
 button { margin-top:1.5rem; padding:.6rem 1.4rem; font:inherit; font-weight:600; cursor:pointer;
   background:var(--accent); color:#fff; border:0; border-radius:6px; }
 button:disabled { opacity:.5; cursor:default; }
@@ -607,6 +609,55 @@ def login(slug: str):
     return redirect(f"/p/{slug}")
 
 
+@app.get("/p/<slug>/settings")
+def settings(slug: str):
+    person = next((p for p in profiles.listing() if p["slug"] == slug), None)
+    if not person or not can_view(person):
+        return redirect("/")
+    ln = pick(person.get("language"))
+    data = profiles.read(Path(person["dir"]))
+    conta = data.get("locale") or "en"
+    opcoes = "".join(
+        f'<option value="{c}"{" selected" if data.get("language_choice") == c else ""}>{n}</option>'
+        for c, n in [("", _t("ui.language_auto", ln, lang=conta))] + [
+            (c, {"en": "English", "pt": "Português", "es": "Español", "fr": "Français",
+                 "de": "Deutsch", "it": "Italiano", "zh": "中文"}[c]) for c in languages()])
+    return page(f'{_t("ui.settings", ln)}, {APP}', f"""
+<nav><a href="/p/{slug}">{_t("ui.back", ln)}</a></nav>
+<h1>{_t("ui.settings", ln)}</h1>
+<p class=sub>{escape(person["name"])}</p>
+
+<form method=post action="/p/{slug}/settings">
+  <h2>{_t("ui.your_prompt", ln)}</h2>
+  <p class=note-box>{_t("ui.prompt_help", ln)}</p>
+  <textarea name=prompt rows=6 placeholder="{escape(_t("ui.prompt_example", ln))}"
+    >{escape(data.get("prompt") or "")}</textarea>
+
+  <h2>{_t("ui.language_choice", ln)}</h2>
+  <select name=language>{opcoes}</select>
+
+  <button type=submit>{_t("ui.save", ln)}</button>
+</form>""")
+
+
+@app.post("/p/<slug>/settings")
+def save_settings(slug: str):
+    person = next((p for p in profiles.listing() if p["slug"] == slug), None)
+    if not person or not can_view(person):
+        return redirect("/")
+    folder = Path(person["dir"])
+    data = profiles.read(folder)
+    data["prompt"] = request.form.get("prompt", "").strip()[:2000]
+    escolha = request.form.get("language", "").strip()
+    data["language_choice"] = escolha
+    if escolha:
+        data["language"] = escolha
+    else:
+        data["language"] = pick(data.get("locale"))
+    profiles.write(folder, data)
+    return redirect(f"/p/{slug}")
+
+
 @app.post("/refresh/<slug>")
 def refresh(slug: str):
     person = next((p for p in profiles.listing() if p["slug"] == slug), None)
@@ -653,11 +704,12 @@ def report_for(person: dict, day: str | None):
         f'{d}{" (today_str)" if d == today_str else ""}</a>' for d in days_list[:14])
     portrait = (f'<img class=avatar src="/photo/{person["slug"]}" alt="">' if person["photo"] else "")
     sair = f'<a href=/logout>{_t("ui.logout", ln)}</a>' if person["has_password"] else ""
+    settings_link = f'<a href="/p/{person["slug"]}/settings">{_t("ui.settings", ln)}</a>'
     update = (f'<form method=post action="/refresh/{person["slug"]}" class=inline>'
               f'<button class=pequeno type=submit>{_t("ui.update_now", ln)}</button></form>')
     return page(f'{person["first"]}, {APP}',
                 f'<nav>{portrait}<b>{escape(person["name"])}</b>'
-                f'{update}<a href="/">{_t("ui.switch", ln)}</a>'
+                f'{update}{settings_link}<a href="/">{_t("ui.switch", ln)}</a>'
                 f'<a href="/new">{_t("ui.add", ln)}</a>{sair}</nav>{body}'
                 f'<hr><h3>{_t("ui.previous", ln)}</h3>'
                 f'<div class=previous>{previous or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',

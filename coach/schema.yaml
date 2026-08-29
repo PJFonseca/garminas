@@ -14,6 +14,7 @@
 
 activities:
   table: [activities, activity]
+  id: [activity_id, activityId, id]
   date: [start_time_local, start_time, startTimeLocal, begin_timestamp]
   sport: [activity_type, activityType, sport, type_key]
   duration_s: [duration, elapsed_duration, duration_seconds, elapsedDuration]

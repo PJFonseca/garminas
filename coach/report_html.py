@@ -57,6 +57,32 @@ CSS = """
 .correu .rotulo b { color:var(--s1); font-size:.95rem; }
 .correu p { margin:0; font-size:1.05rem; line-height:1.55; max-width:68ch; }
 .correu .factos { margin-top:.6rem; font-size:.85rem; color:var(--dim); }
+
+/* Parciais e zonas. O comprimento das barras diz o que os números sozinhos
+   demoram a dizer: onde acelerou, onde caiu, onde passou o tempo todo. */
+.detalhe { margin-top:1.1rem; display:grid; gap:1.1rem;
+  grid-template-columns:repeat(auto-fit,minmax(19rem,1fr)); }
+.detalhe h4 { margin:0 0 .5rem; font-size:.78rem; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--dim); font-weight:600; }
+.sp { display:grid; grid-template-columns:1.4rem 1fr auto; align-items:center;
+  gap:.5rem; padding:.16rem 0; font-size:.83rem; }
+.sp .n { color:var(--dim); font-variant-numeric:tabular-nums; text-align:right; }
+.sp .barra { height:.75rem; border-radius:3px; background:var(--s1); min-width:2px; }
+.sp .v { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.sp .v small { color:var(--dim); margin-left:.4rem; }
+.zonas { display:flex; height:1.5rem; border-radius:6px; overflow:hidden; }
+.zonas i { display:block; }
+.zonas .z1 { background:#cde2fb } .zonas .z2 { background:#9ec5f4 }
+.zonas .z3 { background:#5598e7 } .zonas .z4 { background:#2a78d6 }
+.zonas .z5 { background:#184f95 }
+@media (prefers-color-scheme: dark) {
+  .zonas .z1 { background:#184f95 } .zonas .z2 { background:#256abf }
+  .zonas .z3 { background:#3987e5 } .zonas .z4 { background:#6da7ec }
+  .zonas .z5 { background:#b7d3f6 }
+}
+.zleg { display:flex; flex-wrap:wrap; gap:.7rem; margin-top:.45rem; font-size:.78rem;
+  color:var(--dim); font-variant-numeric:tabular-nums; }
+.zleg b { color:var(--fg); font-weight:600; }
 .today .muted { color:var(--dim); }
 
 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(21rem,1fr)); gap:.8rem; margin:.75rem 0 2rem; }
@@ -192,6 +218,46 @@ def _intensity(load: float, ln: str) -> tuple[str, str]:
         if load >= limit:
             return css, _t(chave, ln)
     return "rest", _t("int.rest", ln)
+
+
+def _mmss(segundos: int) -> str:
+    return f"{segundos // 60}:{segundos % 60:02d}"
+
+
+def _splits(parciais: list[dict], ln: str) -> str:
+    """Um traço por quilómetro, com o comprimento a valer a velocidade."""
+    if not parciais:
+        return ""
+    topo = max((p["kmh"] or 0) for p in parciais) or 1
+    linhas = []
+    for p in parciais:
+        largura = round((p["kmh"] or 0) / topo * 100)
+        extra = []
+        if p.get("hr"):
+            extra.append(f'{p["hr"]} bpm')
+        if p.get("cadence"):
+            extra.append(f'{p["cadence"]} spm')
+        linhas.append(
+            f'<div class=sp><span class=n>{p["n"]}</span>'
+            f'<span class=barra style="width:{largura}%"></span>'
+            f'<span class=v>{p["pace"]} /km'
+            f'{f"<small>{escape(chr(183).join(extra))}</small>" if extra else ""}</span></div>')
+    return (f'<div><h4>{_t("d.splits", ln)}</h4>{"".join(linhas)}</div>')
+
+
+def _zonas(zonas: list[dict], ln: str) -> str:
+    total = sum(z["seconds"] for z in zonas) or 1
+    barras = "".join(
+        f'<i class=z{z["n"]} style="width:{z["seconds"] / total * 100:.1f}%" '
+        f'title="Z{z["n"]}, {_mmss(z["seconds"])}"></i>'
+        for z in zonas if z["seconds"])
+    legenda = " ".join(
+        f'<span><b>Z{z["n"]}</b> {_mmss(z["seconds"])}'
+        + (f' <span title="{_t("d.zone_from", ln, bpm=z["low"])}">{z["low"]}+</span>'
+           if z.get("low") else "") + '</span>'
+        for z in zonas if z["seconds"])
+    return (f'<div><h4>{_t("d.zones", ln)}</h4><div class=zonas>{barras}</div>'
+            f'<div class=zleg>{legenda}</div></div>')
 
 
 def _tsb_state(tsb: float, ln: str) -> tuple[str, str, str]:
@@ -396,12 +462,19 @@ def report_html(d: dict) -> str:
         if sessao.get("avg_hr"):
             factos.append(f'{sessao["avg_hr"]} bpm')
         factos.append(f'{_t("ui.load", ln)} {sessao["load"]}')
+        if sessao.get("max_hr"):
+            factos.append(_t("d.max_hr", ln, hr=sessao["max_hr"]))
+        if (sessao.get("weather") or {}).get("temp") is not None:
+            factos.append(f'{sessao["weather"]["temp"]}°C')
+        detalhe = _splits(sessao.get("splits") or [], ln) + _zonas(sessao["zones"], ln) \
+            if sessao.get("zones") else _splits(sessao.get("splits") or [], ln)
         correu_html = (
             f'<div class=correu><div class=rotulo><b>{escape(APP)}</b> '
             f'{_t("ui.como_correu", ln)}</div>'
             f'<p>{escape(comentario or sessao["veredicto"])}</p>'
             f'<div class=factos>{escape(desporto(sessao["sport"], ln))}, '
-            f'{sessao["minutes"]} min, {" · ".join(factos)}</div></div>')
+            f'{sessao["minutes"]} min, {" · ".join(factos)}</div>'
+            + (f'<div class=detalhe>{detalhe}</div>' if detalhe else "") + '</div>')
 
     if d.get("today_done"):
         s = d["today_done"]
