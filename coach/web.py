@@ -507,6 +507,19 @@ def report(day: str | None = None):
     return page("Treino — garmin-nas",
                 f'<nav><a href="/configurar">Configurar</a></nav>{corpo}'
                 f'<hr><h3>Anteriores</h3><p class=legend>{older or "nenhum"}</p>',
+                """<script>
+document.querySelectorAll('.day[data-dia]').forEach(c => {
+  const abrir = () => document.getElementById('dia-' + c.dataset.dia)?.showModal();
+  c.addEventListener('click', abrir);
+  c.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+  });
+});
+document.querySelectorAll('dialog').forEach(d => {
+  d.querySelector('.fechar')?.addEventListener('click', () => d.close());
+  d.addEventListener('click', e => { if (e.target === d) d.close(); });
+});
+</script>""",
                 wide=True)
 
 

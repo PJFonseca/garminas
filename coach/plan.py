@@ -97,7 +97,8 @@ def ritmo_de(w: dict, paces: dict) -> str:
 
 
 def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
-               skip_today: bool = False, objetivo: dict | None = None) -> dict:
+               skip_today: bool = False, objetivo: dict | None = None,
+               extras: dict | None = None) -> dict:
     """Devolve o plano dia a dia mais um resumo do que ele provoca na carga."""
     by_id = {w["id"]: w for w in catalogue}
     load = m["load"]
@@ -119,7 +120,7 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
     # Com o objetivo de perder peso, o descanso completo passa a caminhada
     # leve, tirando um dia por semana. Caminhar gasta energia e quase não cobra
     # recuperação; a intensidade fica na mesma, porque é essa que magoa.
-    objetivo = objetivo or {}
+    objetivo, extras = objetivo or {}, extras or {}
     perder_peso = bool(objetivo.get("perder_peso")) and not flagged
     descansos_por_semana = objetivo.get("dias_descanso_por_semana", 1)
 
@@ -185,6 +186,8 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
             "name": choice["name"],
             "description": " ".join(choice.get("description", "").split()),
             "ritmo": ritmo_de(choice, m.get("paces", {})),
+            "estrutura": (extras.get("estruturas") or {}).get(choice["id"], []),
+            "exercicios": (extras.get("exercicios") or {}).get(choice["id"], []),
             "motivo": motivo,
             "duration_min": choice.get("duration_min"),
             "load_est": est,

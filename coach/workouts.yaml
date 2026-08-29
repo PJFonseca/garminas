@@ -130,3 +130,58 @@ workouts:
     description: >
       Agachamentos, afundos, elevação de gémeos, prancha. Duas a três séries.
       Complementa sem competir pela mesma recuperação.
+
+# --- Desenho das sessões -----------------------------------------------------
+# A estrutura serve a linha de tempo que aparece no modal de cada dia: a sessão
+# vista de lado, do aquecimento ao arrefecimento. Fica aqui em baixo, e não
+# dentro de cada sessão, para não partir os comentários do catálogo.
+#
+# tipo: facil, forte ou andar. min é em minutos.
+estruturas:
+  easy_run:
+    - {min: 35, tipo: facil, nome: Zona 2 do princípio ao fim}
+  treadmill_base:
+    - {min: 40, tipo: facil, nome: Contínuo com 1% de inclinação}
+  long_run:
+    - {min: 75, tipo: facil, nome: Zona 2, sem acelerar no fim}
+  easy_walk:
+    - {min: 45, tipo: andar, nome: Ritmo conversável}
+  treadmill_intervals_short:
+    - {min: 10, tipo: facil, nome: Aquecimento}
+    - repete: 8
+      blocos:
+        - {min: 1, tipo: forte, nome: Forte}
+        - {min: 1.5, tipo: andar, nome: A andar}
+    - {min: 10, tipo: facil, nome: Arrefecer}
+  treadmill_intervals_long:
+    - {min: 15, tipo: facil, nome: Aquecimento}
+    - repete: 5
+      blocos:
+        - {min: 3, tipo: forte, nome: Ritmo forte}
+        - {min: 2, tipo: facil, nome: Fácil}
+    - {min: 10, tipo: facil, nome: Arrefecer}
+  tempo:
+    - {min: 15, tipo: facil, nome: Fácil}
+    - {min: 20, tipo: forte, nome: Confortavelmente difícil}
+    - {min: 10, tipo: facil, nome: Fácil}
+
+# Os exercícios de força, com figura. Os nomes sozinhos não chegam a quem
+# nunca os fez.
+exercicios:
+  strength:
+    - nome: Agachamento
+      series: 3 séries de 12
+      figura: agachamento
+      dica: Pés à largura dos ombros, desce como se te fosses sentar. Joelhos alinhados com os pés.
+    - nome: Afundo
+      series: 3 séries de 10 por perna
+      figura: afundo
+      dica: Um passo à frente, desce até o joelho de trás quase tocar no chão. Tronco direito.
+    - nome: Elevação de gémeos
+      series: 3 séries de 15
+      figura: gemeos
+      dica: De pé, sobe nas pontas dos pés e desce devagar. Um degrau aumenta a amplitude.
+    - nome: Prancha
+      series: 3 de 30 a 45 segundos
+      figura: prancha
+      dica: Antebraços no chão, corpo em linha reta dos ombros aos calcanhares. Não deixes descair a anca.

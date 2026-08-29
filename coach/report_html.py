@@ -15,6 +15,7 @@ from __future__ import annotations
 from html import escape
 
 from assess import ESTADOS, desporto
+from figuras import CSS as FIG_CSS, exercicios, linha_tempo
 
 CSS = """
 .viz { --s1:#2a78d6; --seq-leve:#9ec5f4; --seq-med:#3987e5; --seq-duro:#1c5cab;
@@ -152,7 +153,23 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
 .resumo h3 { margin:0 0 .45rem; font-size:.9rem; }
 .resumo li { margin:.15rem 0; font-size:.9rem; }
 .resumo ul { margin:0; padding-left:1.1rem; }
-"""
+
+.day { cursor:pointer; }
+.day:hover, .day:focus-visible { border-color:var(--s1); }
+.day .ver { font-size:.74rem; color:var(--s1); margin-top:.45rem; }
+dialog { border:1px solid var(--line); border-radius:14px; background:var(--bg); color:var(--fg);
+  padding:0; max-width:min(46rem, 92vw); width:100%; }
+dialog::backdrop { background:rgba(0,0,0,.55); }
+.modal { padding:1.5rem 1.6rem 1.7rem; position:relative; }
+.modal .quando { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+.modal h3 { margin:.25rem 0 .5rem; font-size:1.5rem; }
+.modal .ritmo { padding:.6rem .8rem; border-radius:8px; font-weight:600;
+  background:color-mix(in srgb, var(--s1) 12%, transparent); }
+.modal .como { color:var(--dim); }
+.modal .porque { font-size:.87rem; color:var(--dim); margin:1rem 0 0; }
+.modal .fechar { position:absolute; top:.6rem; right:.9rem; border:0; background:none;
+  color:var(--dim); font-size:1.6rem; cursor:pointer; line-height:1; }
+""" + FIG_CSS
 
 INTENSITY = [(85, "duro", "dura"), (50, "med", "moderada"), (1, "leve", "leve"), (0, "rest", "descanso")]
 
@@ -262,14 +279,40 @@ def _plan(days: list[dict], hoje: str) -> str:
         css, label = _intensity(d["load_est"])
         minutos = f'{d["duration_min"]} min' if d["duration_min"] else "sem treino"
         cards.append(
-            f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}">'
+            f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}" '
+            f'data-dia="{d["date"]}" role=button tabindex=0>'
             f'<span class=tip>{escape(d.get("motivo", label))}</span>'
             f'<div class=d>{d["weekday"][:3]} {d["date"][8:]}/{d["date"][5:7]}</div>'
             f'<div class=s>{escape(d["name"])}</div>'
             f'<div class=m>{minutos}</div>'
             + (f'<div class=ritmo>{escape(d["ritmo"])}</div>' if d.get("ritmo") else "")
-            + f'<div class=desc>{escape(d.get("description", ""))}</div></div>')
-    return f'<div class=plan>{"".join(cards)}</div>'
+            + f'<div class=desc>{escape(d.get("description", ""))}</div>'
+            + '<div class=ver>ver a sessão</div></div>')
+    return f'<div class=plan>{"".join(cards)}</div>{"".join(_modal(x) for x in days)}'
+
+
+def _modal(d: dict) -> str:
+    """A sessão inteira, ao clicar no dia.
+
+    O cartão tem de caber numa grelha. O modal não tem essa desculpa, e é onde
+    cabe a linha de tempo e o desenho de cada exercício.
+    """
+    dur = f' · {d["duration_min"]} min' if d["duration_min"] else ""
+    partes = [f'<div class=quando>{d["weekday"]}, {d["date"]}{dur}</div>',
+              f'<h3>{escape(d["name"])}</h3>']
+    if d.get("ritmo"):
+        partes.append(f'<p class=ritmo>{escape(d["ritmo"])}</p>')
+    if d.get("description"):
+        partes.append(f'<p class=como>{escape(d["description"])}</p>')
+    if d.get("estrutura"):
+        partes.append(linha_tempo(d["estrutura"]))
+    if d.get("exercicios"):
+        partes.append(exercicios(d["exercicios"]))
+    if d.get("motivo"):
+        partes.append(f'<p class=porque>Porquê esta: {escape(d["motivo"])}</p>')
+    return (f'<dialog id="dia-{d["date"]}"><div class=modal>'
+            f'<button class=fechar aria-label=Fechar>&times;</button>'
+            f'{"".join(partes)}</div></dialog>')
 
 
 def _prose(text: str | None) -> str:

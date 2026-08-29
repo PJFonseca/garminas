@@ -90,7 +90,29 @@ Regras de língua, obrigatórias:
   planejar, registo e não registro, ecrã e não tela, equipa e não time.
 - Não uses travessões. Onde te apetecer um, escolhe vírgula, dois pontos ou
   parênteses.
-- Nunca fazes contas: citas apenas números que te são dados, tal como aparecem."""
+- Nunca fazes contas: citas apenas números que te são dados, tal como aparecem.
+
+Registo:
+- Falas com a pessoa, por tu. Não escreves um relatório sobre ela.
+- Frases curtas, no máximo vinte palavras cada.
+- Dizes o que fazer. Nunca "podes considerar", "seria aconselhável" nem
+  "é recomendável".
+- Nada de encher: "é fundamental", "é essencial", "requer atenção", "de forma
+  a", "no sentido de", "com o objetivo de". Corta e vai direto.
+- Um número chega para sustentar uma frase. Não precisas de o apresentar com
+  "como demonstra o valor de"."""
+
+# Fórmulas de relatório. Todas têm uma versão direta, e um treinador usa a
+# direta: "dorme mais" em vez de "é fundamental melhorar a higiene do sono".
+CLICHES = [
+    "é fundamental", "é essencial", "é importante referir", "é de salientar",
+    "requer atenção", "merece atenção especial", "podes considerar",
+    "seria aconselhável", "é recomendável", "de forma a", "no sentido de",
+    "com o objetivo de", "de modo a", "por conseguinte", "vale a pena referir",
+    "como demonstra o valor", "no que diz respeito", "importa referir",
+    "de salientar que", "em suma", "por outro lado, é",
+    "é crucial", "são cruciais", "é vital", "desempenha um papel",
+]
 
 # Palavras que denunciam português do Brasil ou tradução do inglês. A troca é
 # segura porque nenhuma delas tem outro sentido em português europeu.
@@ -131,10 +153,10 @@ NAO_GERUNDIO = {"quando", "fundo", "mundo", "segundo", "profundo", "comando",
                 "bando", "brando", "redondo", "tremendo", "estupendo"}
 GERUNDIO = re.compile(r"\b\w{3,}(?:ando|endo|indo)\b", re.I)
 
-AVISO_LINGUA = ("\n\nA tua resposta anterior não estava em português europeu: tinha "
-                "gerúndios a mais ou construções do português do Brasil. Reescreve "
-                "sem nenhum gerúndio, usando \"a\" mais infinitivo e orações com "
-                "\"que\" ou \"para\".")
+AVISO_LINGUA = ("\n\nA tua resposta anterior não serve: tinha gerúndios, construções "
+                "do português do Brasil, ou fórmulas de relatório. Reescreve sem "
+                "nenhum gerúndio, com \"a\" mais infinitivo, e fala diretamente com a "
+                "pessoa em frases curtas. Diz o que fazer, sem rodeios.")
 
 STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos dados "
             "acima. Reescreve usando exclusivamente os números listados, tal como "
@@ -165,6 +187,9 @@ def portugues_europeu(texto: str) -> tuple[bool, str]:
         return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
     if "—" in texto or "–" in texto:
         return False, "travessão"
+    achados = [c for c in CLICHES if c in texto.lower()]
+    if achados:
+        return False, "fórmula de relatório: " + ", ".join(achados)
     restos = [p for p in BRASILEIRISMOS if re.search(rf"\b{p}\b", texto, re.I)]
     if restos:
         return False, "vocabulário: " + ", ".join(restos)
@@ -264,10 +289,17 @@ def analyse_training(m: dict, flags: list[str]) -> str | None:
     seu trabalho é só escrevê-lo de forma corrida.
     """
     w14 = m["windows"]["14d"]
-    leituras = "\n".join(
-        f"- {f['titulo']}: {f['valor']}{' ' + f['unidade'] if f['unidade'] else ''}, "
-        f"{ESTADOS[f['estado']][2]}, {f['leitura']}"
-        for f in assess(m))
+    def uma(f: dict) -> str:
+        linha = (f"- {f['titulo']}: {f['valor']}"
+                 f"{' ' + f['unidade'] if f['unidade'] else ''}, "
+                 f"{ESTADOS[f['estado']][2]}, {f['leitura']}")
+        if f.get("alvo"):
+            linha += f". Onde devia estar: {f['alvo']}"
+        if f.get("acao"):
+            linha += f". O que fazer: {f['acao']}"
+        return linha
+
+    leituras = "\n".join(uma(f) for f in assess(m))
 
     return write(f"""Leituras já feitas, com o veredicto de cada uma. Não as
 reinterpretes nem tires conclusões novas: o teu trabalho é escrevê-las de forma
@@ -286,7 +318,10 @@ repeti-las não acrescenta nada. Diz antes o que o conjunto significa: qual é a
 única coisa que mais limita este treino neste momento, e o que muda se ela for
 tratada.
 
-Máximo 60 palavras. Usa no máximo dois números, copiados da lista.""")
+Máximo 60 palavras. Usa no máximo dois números, copiados da lista. Atenção: o
+valor atual de uma métrica não é a meta. Se disseres a alguém quanto deve
+dormir, usa o número que está em "onde devia estar", nunca o que ela dorme
+agora.""")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str]) -> str | None:
@@ -454,7 +489,8 @@ def main() -> None:
     flags = check_flags(m, cfg["recovery_flags"])
     ja_treinou_hoje = any(s["date"] == m["generated"] for s in m["recent"])
     plan = build_plan(m, cfg["workouts"], bool(flags), PLAN_DAYS,
-                      skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"))
+                      skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"),
+                      extras=cfg)
 
     analysis = analyse_training(m, flags)
     review = review_and_recommend(m, plan, flags)
