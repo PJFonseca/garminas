@@ -119,10 +119,10 @@ SYSTEM = """És um treinador conciso e honesto. Escreves em português europeu d
 Portugal, sem entusiasmo artificial.
 
 Regras de língua, obrigatórias:
-- Nunca uses gerúndio para ação em curso. Escreve "está a subir", nunca "está
-  subindo"; "a manter a base", nunca "mantendo a base".
-- Não encadeies gerúndios do género "indicando", "permitindo", "evitando",
-  "preservando". Usa orações com "que", "para" ou "porque".
+- Para ação em curso escreve "está a subir", nunca "está subindo".
+- Não encadeies gerúndios. Um está bem; três a ligar orações, do género
+  "indicando, permitindo, evitando", lê-se a tradução. Usa "que", "para" ou
+  "porque".
 - Vocabulário: treino e não treinamento, desporto e não esporte, planear e não
   planejar, registo e não registro, ecrã e não tela, equipa e não time.
 - Não uses travessões. Onde te apetecer um, escolhe vírgula, dois pontos ou
@@ -236,10 +236,10 @@ NAO_GERUNDIO = {"quando", "fundo", "mundo", "segundo", "profundo", "comando",
                 "bando", "brando", "redondo", "tremendo", "estupendo"}
 GERUNDIO = re.compile(r"\b\w{3,}(?:ando|endo|indo)\b", re.I)
 
-AVISO_LINGUA = ("\n\nA tua resposta anterior não serve: tinha gerúndios, construções "
-                "do português do Brasil, ou fórmulas de relatório. Reescreve sem "
-                "nenhum gerúndio, com \"a\" mais infinitivo, e fala diretamente com a "
-                "pessoa em frases curtas. Diz o que fazer, sem rodeios.")
+AVISO_LINGUA = ("\n\nA tua resposta anterior não serve: tinha gerúndios encadeados, "
+                "construções do português do Brasil, ou fórmulas de relatório. Reescreve "
+                "com orações ligadas por \"que\", \"para\" ou \"porque\", e fala "
+                "diretamente com a pessoa em frases curtas.")
 
 STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos dados "
             "acima. Reescreve usando exclusivamente os números listados, tal como "
@@ -255,7 +255,18 @@ def arranjar(texto: str) -> str:
     rejeição fica para o que não se arranja: números inventados e língua errada.
     """
     texto = re.sub(r"\s*[\u2014\u2013]\s*", ", ", texto)
-    return texto.replace(",,", ",")
+    texto = texto.replace(",,", ",")
+
+    # "está subindo" tem uma forma europeia exata, "está a subir", e a troca é
+    # mecânica. Vale a pena fazê-la em vez de mandar o texto de volta.
+    def para_infinitivo(m):
+        verbo, ger = m.group(1), m.group(2)
+        raiz = ger[:-4]
+        terminacao = {"ando": "ar", "endo": "er", "indo": "ir"}[ger[-4:]]
+        return f"{verbo} a {raiz}{terminacao}"
+
+    return re.sub(r"\b(est(?:á|ão|ava|avam)|vai|vão|continua|continuam|anda|andam)\s+"
+                  r"(\w{3,}(?:ando|endo|indo))\b", para_infinitivo, texto, flags=re.I)
 
 
 def aportuguesar(texto: str) -> str:
@@ -285,9 +296,13 @@ def portugues_europeu(texto: str, ln: str = "pt") -> tuple[bool, str]:
         achado = padrao.search(texto)
         if achado:
             return False, f"pronome antes do verbo: '{achado.group(0)}'"
+    # O gerúndio é português correto: "mantendo o volume" não tem defeito
+    # nenhum. O que soa a tradução é a acumulação, três a servir de ligação
+    # entre orações, do género "indicando, permitindo, evitando". É a
+    # acumulação que se rejeita, não a forma.
     gerundios = [g for g in GERUNDIO.findall(texto) if g.lower() not in NAO_GERUNDIO]
-    if gerundios:
-        return False, "gerúndio: " + ", ".join(sorted(set(gerundios)))
+    if len(gerundios) >= 3:
+        return False, "gerúndios encadeados: " + ", ".join(sorted(set(gerundios)))
     achados = [c for c in CLICHES if c in texto.lower()]
     if achados:
         return False, "fórmula de relatório: " + ", ".join(achados)
