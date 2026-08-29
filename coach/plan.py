@@ -24,14 +24,18 @@ SLOTS = ["rest", "quality", "easy", "quality", "strength", "long", "easy"]
 # Preferências por tipo de slot, da mais exigente para a mais branda.
 PREFERENCES = {
     "rest": ["rest", "easy_walk"],
+    "walk": ["easy_walk", "rest"],
     "easy": ["easy_run", "treadmill_base", "strength", "easy_walk"],
     "quality": ["tempo", "treadmill_intervals_long", "treadmill_intervals_short"],
     "strength": ["strength", "easy_walk", "rest"],
     "long": ["long_run", "easy_run", "treadmill_base"],
 }
 SAFE = ["rest", "easy_walk", "strength"]
+SAFE_PESO = ["easy_walk", "rest", "strength"]
 
 DIAS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+NOME_SLOT = {"rest": "descanso", "easy": "rodagem fácil", "quality": "trabalho de qualidade",
+             "long": "corrida longa", "strength": "força", "walk": "caminhada"}
 
 MAX_QUALITY_PER_WEEK = 2
 RAMP_CAP = 1.10  # a semana planeada não excede a anterior em mais de 10%
@@ -63,8 +67,26 @@ def _pick(by_id: dict, allowed: set[str], order: list[str]) -> dict | None:
     return next((by_id[i] for i in order if i in allowed and i in by_id), None)
 
 
+def porque_nao(w: dict, tsb: float, ctl: float, dsh: int | None, flagged: bool) -> str:
+    """A regra que impediu uma sessão. Serve para explicar a escolha do dia.
+
+    Sem isto o plano diz o que fazer mas nunca porquê, e uma sugestão sem
+    razão é indistinguível de um palpite.
+    """
+    if flagged and not w.get("recovery_safe"):
+        return "há sinais de fadiga por resolver, por isso só entram sessões leves"
+    if "days_since_hard_min" in w and dsh is not None and dsh < w["days_since_hard_min"]:
+        return (f"a última sessão dura foi há {dsh} "
+                f"{'dia' if dsh == 1 else 'dias'} e esta pede {w['days_since_hard_min']}")
+    if "tsb_min" in w and tsb < w["tsb_min"]:
+        return f"a frescura está em {round(tsb, 1)} e esta sessão pede pelo menos {w['tsb_min']}"
+    if "ctl_min" in w and ctl < w["ctl_min"]:
+        return f"a base aeróbia ainda está em {round(ctl, 1)} e esta sessão pede {w['ctl_min']}"
+    return ""
+
+
 def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
-               skip_today: bool = False) -> dict:
+               skip_today: bool = False, objetivo: dict | None = None) -> dict:
     """Devolve o plano dia a dia mais um resumo do que ele provoca na carga."""
     by_id = {w["id"]: w for w in catalogue}
     load = m["load"]
@@ -83,14 +105,21 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
                        or mes.get("mean_week_minutes", 0))
     week_minutes_cap = max(round(base_minutes * RAMP_CAP), 120)
 
-    plan, quality_week, minutes_week = [], 0, 0
+    # Com o objetivo de perder peso, o descanso completo passa a caminhada
+    # leve, tirando um dia por semana. Caminhar gasta energia e quase não cobra
+    # recuperação; a intensidade fica na mesma, porque é essa que magoa.
+    objetivo = objetivo or {}
+    perder_peso = bool(objetivo.get("perder_peso")) and not flagged
+    descansos_por_semana = objetivo.get("dias_descanso_por_semana", 1)
+
+    plan, quality_week, minutes_week, descansos_week = [], 0, 0, 0
     today = date.today()
 
     first = 1 if skip_today else 0
     for offset in range(first, first + days):
         day = today + timedelta(days=offset)
         if offset > first and (offset - first) % 7 == 0:   # nova semana do plano
-            quality_week, minutes_week = 0, 0
+            quality_week, minutes_week, descansos_week = 0, 0, 0
 
         tsb = ctl - atl
         # As bandeiras de recuperação só valem para os primeiros dois dias: a
@@ -102,27 +131,49 @@ def build_plan(m: dict, catalogue: list[dict], flagged: bool, days: int = 14,
         if slot == "quality" and quality_week >= MAX_QUALITY_PER_WEEK:
             slot = "easy"
 
+        if perder_peso and slot == "rest" and descansos_week >= descansos_por_semana:
+            slot = "walk"
+        preferida = by_id.get(PREFERENCES[slot][0])
         choice = _pick(by_id, allowed, PREFERENCES[slot])
+        motivo = f"é o dia de {NOME_SLOT[slot]} da semana"
+        if slot == "walk":
+            motivo = "caminhada em vez de descanso, para somar gasto sem cobrar recuperação"
+
+        recurso = SAFE_PESO if (perder_peso and descansos_week >= descansos_por_semana) else SAFE
         if choice and minutes_week + choice.get("duration_min", 0) > week_minutes_cap:
-            choice = _pick(by_id, allowed, SAFE)      # travão de volume
+            choice = _pick(by_id, allowed, recurso)   # travão de volume
+            motivo = (f"a semana já leva {minutes_week} minutos de corrida e esta sessão "
+                      f"passava o tecto de {week_minutes_cap}, por isso hoje fica assim")
+        elif choice and preferida and choice["id"] != preferida["id"]:
+            barreira = porque_nao(preferida, tsb, ctl, dsh, flagged and offset <= 1)
+            motivo = (f"{barreira}, por isso fica esta" if barreira
+                      else f"é o dia de {NOME_SLOT[slot]}, no que está elegível")
         if not choice:
-            choice = _pick(by_id, allowed, SAFE) or by_id["rest"]
+            choice = _pick(by_id, allowed, recurso) or by_id["rest"]
+            motivo = "nada mais exigente está elegível com o estado de hoje"
 
         est = choice.get("load_est", 0)
         ctl = est * a_ctl + ctl * (1 - a_ctl)
         atl = est * a_atl + atl * (1 - a_atl)
 
+        if choice["id"] == "rest":
+            descansos_week += 1
         hard = est >= 85
         dsh = 0 if hard else (dsh + 1 if dsh is not None else None)
         if hard:
             quality_week += 1
-        minutes_week += choice.get("duration_min", 0)
+        # O tecto limita a subida do volume de corrida. Caminhar não é correr:
+        # não carrega as pernas da mesma maneira e não pertence a essa conta.
+        if choice["id"] != "easy_walk":
+            minutes_week += choice.get("duration_min", 0)
 
         plan.append({
             "date": day.isoformat(),
             "weekday": DIAS[day.weekday()],
             "id": choice["id"],
             "name": choice["name"],
+            "description": " ".join(choice.get("description", "").split()),
+            "motivo": motivo,
             "duration_min": choice.get("duration_min"),
             "load_est": est,
             "tsb_after": round(ctl - atl, 1),

@@ -396,6 +396,16 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
                   f"sessão mais longa {month['longest_min']} min.", ""]
 
     feito_hoje = next((s for s in m["recent"] if s["date"] == m["generated"]), None)
+    seguinte = plan["days"][0]
+    quando = "Hoje" if seguinte["date"] == m["generated"] else f"Amanhã, {seguinte['weekday']}"
+    lines += [f"## A seguir: {quando}, {seguinte['date']}", "",
+              f"**{seguinte['name']}**"
+              + (f", {seguinte['duration_min']} min" if seguinte["duration_min"] else "") + "", ""]
+    if seguinte.get("description"):
+        lines += [seguinte["description"], ""]
+    if seguinte.get("motivo"):
+        lines += [f"Porquê esta: {seguinte['motivo']}.", ""]
+
     lines += ["## Hoje", ""]
     if feito_hoje:
         lines += [f"Já treinaste: **{desporto(feito_hoje['sport'])}**, {feito_hoje['minutes']} min"
@@ -413,6 +423,11 @@ def render(m: dict, flags: list[str], plan: dict, analysis: str | None,
     lines += ["", f"{s['sessions']} sessões, {s['hard']} duras, {s['minutes']} minutos. "
                   f"CTL projetado de {s['ctl_start']} para {s['ctl_end']}, "
                   f"TSB no fim {s['tsb_end']}.", ""]
+    if (cfg.get("objetivo") or {}).get("perder_peso"):
+        lines += ["Com o objetivo de perder peso, os dias de descanso a mais passam a caminhada: "
+                  "gasta energia e quase não cobra recuperação. A intensidade fica na mesma. "
+                  "O treino ajuda, mas a diferença maior vem da alimentação, que este relatório "
+                  "não vê.", ""]
 
     lines += ["## Recomendação", ""]
     lines += [review or "_Sem texto redigido: ou o modelo não respondeu, ou o que escreveu "
@@ -437,7 +452,7 @@ def main() -> None:
     flags = check_flags(m, cfg["recovery_flags"])
     ja_treinou_hoje = any(s["date"] == m["generated"] for s in m["recent"])
     plan = build_plan(m, cfg["workouts"], bool(flags), PLAN_DAYS,
-                      skip_today=ja_treinou_hoje)
+                      skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"))
 
     analysis = analyse_training(m, flags)
     review = review_and_recommend(m, plan, flags)
@@ -462,6 +477,7 @@ def main() -> None:
         "slow_down": slow_down_rule(cfg["recovery_flags"]),
         "today_done": next((s for s in m["recent"] if s["date"] == m["generated"]), None),
         "assessment": assess(m),
+        "objetivo": cfg.get("objetivo") or {},
     }
     for name in (f"{stamp}.json", "latest.json"):
         (OUT_DIR / name).write_text(json.dumps(payload, ensure_ascii=False, indent=1))

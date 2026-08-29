@@ -14,7 +14,7 @@ RUN printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\nAcquire::http::Ti
 # Dependencias de sistema: Chrome (necessario para o SeleniumBase UC mode),
 # Xvfb (display virtual, o container nao tem ecra) e bibliotecas graficas.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg tzdata procps \
+      ca-certificates curl gnupg tzdata procps sqlite3 \
       xvfb xauth \
       fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
       libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 libx11-xcb1 \

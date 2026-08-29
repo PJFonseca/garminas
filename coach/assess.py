@@ -211,6 +211,57 @@ def volume(minutes_7d, mean_week_minutes) -> dict:
                                      if razao < 1 else "Semana pesada: a seguinte deve ser mais leve."))
 
 
+def peso(b: dict, alvo=(-0.75, -0.25)) -> dict | None:
+    """Peso e ritmo de variação, quando há pesagens que o sustentem.
+
+    O ritmo é lido em percentagem do peso corporal por semana, não em quilos:
+    meio quilo por semana é coisa diferente para quem pesa 60 ou 95.
+    """
+    if not b.get("has_data"):
+        return None
+
+    kg, velhos = b["kg"], b["days_old"]
+    extra = []
+    if b.get("bmi"):
+        extra.append(f"IMC {b['bmi']}")
+    if b.get("body_fat"):
+        extra.append(f"massa gorda {b['body_fat']}%")
+    gloss = f"pesagem de {b['date']}" + (", " + ", ".join(extra) if extra else "")
+
+    if velhos > 21:
+        return _v("peso", "Peso", kg, "kg", "atencao",
+                  f"a última pesagem foi há {velhos} dias, não dá para ver tendência",
+                  gloss, None, "",
+                  "Pesa-te uma vez por semana, em jejum e sempre à mesma hora.")
+
+    ritmo = b.get("kg_per_week")
+    if ritmo is None:
+        return _v("peso", "Peso", kg, "kg", "atencao",
+                  "poucas pesagens para calcular uma tendência", gloss, None, "",
+                  "Pesa-te uma vez por semana para o plano poder acompanhar.")
+
+    pct = ritmo / kg * 100 if kg else 0
+    baixo, alto = alvo
+    if pct < baixo * 1.5:
+        e, l = "cuidado", f"a descer {abs(ritmo):.2f} kg por semana, depressa de mais"
+        acao = "Come mais nos dias de treino: a esta velocidade perde-se músculo."
+    elif pct <= alto:
+        e, l = "bom", f"a descer {abs(ritmo):.2f} kg por semana, no ritmo certo"
+        acao = ""
+    elif pct <= 0.1:
+        e, l = "atencao", "praticamente estável nas últimas semanas"
+        acao = "O plano acrescenta volume fácil; a diferença maior vem da mesa."
+    else:
+        e, l = "cuidado", f"a subir {ritmo:.2f} kg por semana"
+        acao = "Vale a pena olhar para a alimentação antes de acrescentar treino."
+
+    return _v("peso", "Peso", kg, "kg", e, l, gloss,
+              escala(-1.2, 0.6, [(baixo * 1.5, "cuidado"), (alto, "bom"),
+                                 (0.1, "atencao"), (0.6, "cuidado")], ritmo),
+              f"perder entre {abs(alto) * kg / 100:.2f} e {abs(baixo) * kg / 100:.2f} kg por semana",
+              acao)
+
+
 ORDEM = {"alerta": 0, "cuidado": 1, "atencao": 2, "bom": 3}
 
 
@@ -227,6 +278,9 @@ def assess(m: dict) -> list[dict]:
         sleep(rec["sleep_h_7d"]),
         days_since_hard(load["days_since_hard"]),
     ]
+    ficha_peso = peso(m.get("body", {}))
+    if ficha_peso:
+        fichas.append(ficha_peso)
     return sorted(fichas, key=lambda f: ORDEM[f["estado"]])
 
 

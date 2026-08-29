@@ -43,3 +43,13 @@ hrv:
   status: [status, hrv_status]
   baseline_low: [baseline_low_upper, balanced_low, baseline_low]
   baseline_high: [baseline_balanced_upper, balanced_high, baseline_high]
+
+# A Garmin guarda o peso e a massa muscular em gramas. A conversão é feita no
+# metrics.py, porque nem todas as fontes usam a mesma unidade.
+weight:
+  table: [weight, body_composition, weigh_ins]
+  date: [calendar_date, calendarDate, day, date]
+  weight: [weight, weight_grams, weightInGrams]
+  bmi: [bmi, body_mass_index]
+  body_fat: [body_fat, bodyFat, body_fat_percentage]
+  muscle_mass: [muscle_mass, muscleMass]

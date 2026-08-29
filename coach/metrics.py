@@ -238,6 +238,59 @@ def month_review(acts: list[dict], today: date) -> dict:
     }
 
 
+def body(con, spec, today: date) -> dict:
+    """Peso e composição corporal, com a tendência recente.
+
+    A Garmin devolve gramas quando a balança é dela e quilos quando o valor
+    entra à mão, por isso qualquer coisa acima de 1000 é convertida.
+
+    A frescura do dado importa tanto como o valor: uma pesagem de há dois
+    meses não sustenta uma tendência, e fingir que sustenta seria pior do que
+    não mostrar nada.
+    """
+    serie = daily_series(con, spec, "weight", today - timedelta(days=400))
+    if not serie:
+        return {"has_data": False}
+
+    kg = {d: (v / 1000 if v > 1000 else v) for d, v in serie.items()}
+    dias = sorted(kg)
+    ultimo = dias[-1]
+
+    # Inclinação por mínimos quadrados sobre os últimos 90 dias com dados.
+    recentes = [(d, kg[d]) for d in dias if (ultimo - d).days <= 90]
+    kg_semana = None
+    if len(recentes) >= 3:
+        xs = [(d - recentes[0][0]).days for d, _ in recentes]
+        ys = [v for _, v in recentes]
+        n = len(xs)
+        mx, my = sum(xs) / n, sum(ys) / n
+        denom = sum((x - mx) ** 2 for x in xs)
+        if denom:
+            kg_semana = round(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom * 7, 3)
+
+    outros = {campo: daily_series(con, spec, campo, today - timedelta(days=400))
+              for campo in ("bmi", "body_fat", "muscle_mass")}
+
+    def ultimo_de(campo):
+        s = outros.get(campo) or {}
+        if not s:
+            return None
+        v = s[max(s)]
+        return round(v / 1000 if campo == "muscle_mass" and v > 1000 else v, 1)
+
+    return {
+        "has_data": True,
+        "kg": round(kg[ultimo], 1),
+        "date": ultimo.isoformat(),
+        "days_old": (today - ultimo).days,
+        "kg_per_week": kg_semana,
+        "pontos_90d": len(recentes),
+        "bmi": ultimo_de("bmi"),
+        "body_fat": ultimo_de("body_fat"),
+        "muscle_kg": ultimo_de("muscle_mass"),
+    }
+
+
 def build(con) -> dict:
     spec = yaml.safe_load(SCHEMA.read_text())
     today = date.today()
@@ -302,6 +355,7 @@ def build(con) -> dict:
         },
         "by_sport_28d": by_sport,
         "recent": recent_sessions(acts),
+        "body": body(con, spec.get("weight", {"table": []}), today),
         "windows": {"7d": summarise_window(acts, today, 7),
                     "14d": summarise_window(acts, today, 14)},
         "month": month_review(acts, today),

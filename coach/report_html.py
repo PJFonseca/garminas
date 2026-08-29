@@ -28,7 +28,18 @@ CSS = """
 .hero .date { color:var(--dim); font-variant-numeric:tabular-nums; }
 
 .today { border:1px solid var(--line); border-left:3px solid var(--s1); border-radius:8px;
-  padding:.85rem 1rem; margin:0 0 1.75rem; background:color-mix(in srgb, var(--s1) 5%, transparent); }
+  padding:.85rem 1rem; margin:0 0 1rem; background:color-mix(in srgb, var(--s1) 5%, transparent); }
+
+/* O que fazer a seguir, em destaque. É a pergunta com que se abre a página. */
+.seguir { border:1px solid var(--s1); border-radius:12px; padding:1.15rem 1.3rem 1.3rem;
+  margin:0 0 2rem; background:color-mix(in srgb, var(--s1) 6%, transparent); }
+.seguir .quando { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+.seguir h2 { margin:.2rem 0 .1rem; padding:0; border:0; font-size:1.45rem; }
+.seguir .dur { font-size:.95rem; color:var(--dim); }
+.seguir .como { margin:.7rem 0 0; font-size:1rem; max-width:68ch; }
+.seguir .porque { margin:.55rem 0 0; font-size:.87rem; color:var(--dim); max-width:68ch; }
+.seguir .porque::before { content:"Porquê esta: "; }
+.day .desc { font-size:.76rem; color:var(--dim); margin-top:.3rem; line-height:1.4; }
 .today b { font-size:1.05rem; }
 .today .muted { color:var(--dim); }
 
@@ -249,11 +260,11 @@ def _plan(days: list[dict], hoje: str) -> str:
         minutos = f'{d["duration_min"]} min' if d["duration_min"] else "sem treino"
         cards.append(
             f'<div class="day {css}{" hoje" if d["date"] == hoje else ""}">'
-            f'<span class=tip>{label} · carga estimada {d["load_est"]} · '
-            f'TSB projetado {d["tsb_after"]}</span>'
+            f'<span class=tip>{escape(d.get("motivo", label))}</span>'
             f'<div class=d>{d["weekday"][:3]} {d["date"][8:]}/{d["date"][5:7]}</div>'
             f'<div class=s>{escape(d["name"])}</div>'
-            f'<div class=m>{minutos}</div></div>')
+            f'<div class=m>{minutos}</div>'
+            f'<div class=desc>{escape(d.get("description", ""))}</div></div>')
     return f'<div class=plan>{"".join(cards)}</div>'
 
 
@@ -264,6 +275,21 @@ def _prose(text: str | None) -> str:
                 'plano mantêm-se válidos.</p>')
     blocos = [f"<p>{escape(b.strip())}</p>" for b in text.split("\n") if b.strip()]
     return f'<div class=prose>{"".join(blocos)}</div>'
+
+
+def _seguir(dia: dict, hoje: str) -> str:
+    """A sessão seguinte, escrita por extenso.
+
+    O plano dizia "Corrida fácil, 35 min", que não chega para saber o que
+    fazer: a que ritmo, com que intervalos, quanto tempo a aquecer. A
+    descrição estava no catálogo desde o início e nunca chegava ao ecrã.
+    """
+    quando = "Hoje" if dia["date"] == hoje else f'Amanhã, {dia["weekday"]}'
+    dur = f' <span class=dur>{dia["duration_min"]} min</span>' if dia["duration_min"] else ""
+    como = f'<p class=como>{escape(dia.get("description", ""))}</p>' if dia.get("description") else ""
+    porque = f'<p class=porque>{escape(dia["motivo"])}</p>' if dia.get("motivo") else ""
+    return (f'<div class=seguir><div class=quando>{quando}, {dia["date"]}</div>'
+            f'<h2>{escape(dia["name"])}{dur}</h2>{como}{porque}</div>')
 
 
 def report_html(d: dict) -> str:
@@ -290,6 +316,14 @@ def report_html(d: dict) -> str:
         estado_html += (
             f'<h2>Dentro do normal <span class=conta>{len(calmas)}</span></h2>'
             f'<div class=calmas>{"".join(_linha(f) for f in calmas)}</div>')
+
+    objetivo_html = ""
+    if (d.get("objetivo") or {}).get("perder_peso"):
+        objetivo_html = (
+            '<p class=legend>Com o objetivo de perder peso, os dias de descanso a mais passam a '
+            'caminhada: gasta energia e quase não cobra recuperação. A intensidade fica na mesma, '
+            'porque é essa que magoa. O treino ajuda, mas a diferença maior vem da alimentação, '
+            'que este relatório não vê. E se aparecerem sinais de fadiga, eles mandam primeiro.</p>')
 
     if d.get("today_done"):
         s = d["today_done"]
@@ -319,6 +353,7 @@ def report_html(d: dict) -> str:
   <span class="badge {cls}">{icone} {estado}</span></div>
 
 <div class=today>{agora}</div>
+{_seguir(plan["days"][0], hoje)}
 {flags}
 
 {estado_html}
@@ -339,6 +374,7 @@ def report_html(d: dict) -> str:
     <p class=legend>{resumo["sessions"]} sessões, {resumo["hard"]} duras, {resumo["minutes"]} minutos.
       CTL projetado de {resumo["ctl_start"]} para {resumo["ctl_end"]}, TSB no fim {resumo["tsb_end"]}.
       Calculado a partir das regras, não escrito pelo modelo.</p>
+    {objetivo_html}
   </div>
 </div>
 

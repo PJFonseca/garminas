@@ -12,6 +12,18 @@
 # longo do plano. Não precisa de ser exata; precisa de ser coerente entre
 # sessões, para que a progressão simulada faça sentido.
 
+# --- Objetivo ---------------------------------------------------------------
+# Com perder_peso ativo, o plano prefere volume fácil a descanso completo:
+# caminhar gasta energia e quase não cobra recuperação. Não mexe na
+# intensidade, que é o que magoa, nem passa por cima das bandeiras.
+#
+# O ritmo saudável é 0.25% a 0.75% do peso corporal por semana. Mais depressa
+# do que isso perde-se músculo, e a balança volta a subir a seguir.
+objetivo:
+  perder_peso: true
+  ritmo_pct_semana: [-0.75, -0.25]
+  dias_descanso_por_semana: 1     # o resto passa a caminhada leve
+
 # --- Bloqueio de segurança ---------------------------------------------------
 # Se qualquer destas condições se verificar, só sessões marcadas
 # "recovery_safe" ficam elegíveis. Avaliado em código, não pelo modelo.
