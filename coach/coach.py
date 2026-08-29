@@ -27,6 +27,7 @@ from datetime import date
 from pathlib import Path
 
 import yaml
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(Path(__file__).parent))
 from metrics import build, connect  # noqa: E402
@@ -769,10 +770,20 @@ def main() -> None:
                       skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"),
                       extras=cfg, ln=ln)
 
-    sessao = comentar_sessao(m, ln)
-    livre = seccao_livre(m, plan, flags, ln)
-    analysis = analyse_training(m, flags, ln)
-    review = review_and_recommend(m, plan, flags, ln)
+    # As quatro secções não dependem umas das outras, e o llama.cpp atende
+    # vários pedidos ao mesmo tempo. Em fila, um relatório com um modelo
+    # grande leva meia hora; em paralelo leva o tempo da secção mais lenta.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        tarefas = {
+            "sessao": pool.submit(comentar_sessao, m, ln),
+            "livre": pool.submit(seccao_livre, m, plan, flags, ln),
+            "analysis": pool.submit(analyse_training, m, flags, ln),
+            "review": pool.submit(review_and_recommend, m, plan, flags, ln),
+        }
+        sessao = tarefas["sessao"].result()
+        livre = tarefas["livre"].result()
+        analysis = tarefas["analysis"].result()
+        review = tarefas["review"].result()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report = render(m, flags, plan, analysis, review, cfg["recovery_flags"],
