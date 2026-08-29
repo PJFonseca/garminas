@@ -44,6 +44,24 @@ PORT = int(os.environ.get("WEB_PORT", "8090"))
 
 MFA_PROMPT = re.compile(r"MFA code", re.I)
 
+# A full sync can take an hour. A lock older than three hours belongs to a run
+# that died: the container was restarted, or the job was killed. Without this,
+# one crash disables the update button for good, which is exactly what happened.
+LOCK_MAX_AGE = 3 * 3600
+
+
+def take_lock(folder: Path) -> Path:
+    """Claims the sync lock, clearing one left behind by a dead run."""
+    lockfile = folder / ".sync.lock"
+    if lockfile.exists():
+        age = time.time() - lockfile.stat().st_mtime
+        if age < LOCK_MAX_AGE:
+            raise RuntimeError("a sync is already running for this profile")
+        job.say(f"Clearing a stale lock, {round(age / 3600, 1)} h old.")
+        lockfile.unlink(missing_ok=True)
+    lockfile.touch()
+    return lockfile
+
 # O pseudo-terminal convence os programas de que falam com um terminal a
 # cores, e eles passam a intercalar sequências de escape. No browser isso
 # aparece como lixo do género "[0m" no meio das frases.
@@ -336,10 +354,7 @@ def refresh_work(folder: Path) -> None:
             job.sync, job.started = SyncProgress(), time.time()
         job.say("Looking for new sessions.")
 
-        lockfile = folder / ".sync.lock"
-        if lockfile.exists():
-            raise RuntimeError("a sync is already running for this profile")
-        lockfile.touch()
+        lockfile = take_lock(folder)
         try:
             ok = run_streaming(["xvfb-run", "-a", "garmin-givemydata"],
                                {"GARMIN_DATA_DIR": str(folder)}, mfa_ok=True, track=True)
@@ -397,10 +412,7 @@ def work(folder: Path, model_id: str, email: str, password: str, password_field:
         job.say("A abrir o Chrome e a passar a proteção da Cloudflare. "
                 "A primeira sincronização puxa o histórico todo e demora.")
 
-        lockfile = folder / ".sync.lock"
-        if lockfile.exists():
-            raise RuntimeError("já há uma sincronização a decorrer para este perfil")
-        lockfile.touch()
+        lockfile = take_lock(folder)
         try:
             ok = run_streaming(["xvfb-run", "-a", "garmin-givemydata", "--full"],
                                {"GARMIN_EMAIL": email, "GARMIN_PASSWORD": password,

@@ -1,187 +1,482 @@
-# Catálogo de treinos. O motor filtra por regras; o modelo escolhe apenas de
-# entre os candidatos elegíveis e escreve a justificação. Isto impede que um
-# modelo pequeno invente sessões absurdas para o estado atual.
+# Workout catalogue. The engine filters by rule; the model only picks among the
+# eligible candidates and writes the justification. This is what stops a small
+# model from inventing sessions that make no sense for the current state.
 #
-# Campos de elegibilidade (todos opcionais):
-#   tsb_min / tsb_max        janela de Training Stress Balance
-#   days_since_hard_min      dias desde a última sessão de carga >= 100
-#   ctl_min                  base aeróbia mínima antes de permitir a sessão
-#   requires_fresh           exige que não haja bandeira de recuperação ativa
+# Every piece of text is a map by language, with English as the fallback. Add a
+# language by adding a key; anything missing falls back to en.
 #
-# ritmo é a instrução de velocidade. Os marcadores {facil}, {forte}, {tempo} e
-# {caminhada} são preenchidos com as velocidades calculadas a partir do
-# historial da própria pessoa, não com valores de tabela.
+# Eligibility fields, all optional:
+#   tsb_min / tsb_max        Training Stress Balance window
+#   days_since_hard_min      days since the last session of load >= 100
+#   ctl_min                  minimum aerobic base before the session is allowed
+#   requires_fresh           demands that no recovery flag is active
 #
-# load_est é a carga estimada da sessão, usada para projetar CTL/ATL/TSB ao
-# longo do plano. Não precisa de ser exata; precisa de ser coerente entre
-# sessões, para que a progressão simulada faça sentido.
+# ritmo is the speed instruction. The {facil}, {forte}, {tempo} and {caminhada}
+# placeholders are filled with speeds worked out from the person's own history,
+# never from a table.
+#
+# load_est is the estimated load of the session, used to project CTL/ATL/TSB
+# along the plan. It does not need to be exact; it needs to be consistent
+# between sessions, so that the simulated progression makes sense.
 
-# --- Objetivo ---------------------------------------------------------------
-# Com perder_peso ativo, o plano prefere volume fácil a descanso completo:
-# caminhar gasta energia e quase não cobra recuperação. Não mexe na
-# intensidade, que é o que magoa, nem passa por cima das bandeiras.
+# --- Goal ---------------------------------------------------------------------
+# With perder_peso on, the plan prefers easy volume to complete rest: walking
+# spends energy and asks almost nothing back in recovery. It does not touch
+# intensity, which is what injures, and it never overrides the flags.
 #
-# O ritmo saudável é 0.25% a 0.75% do peso corporal por semana. Mais depressa
-# do que isso perde-se músculo, e a balança volta a subir a seguir.
+# A healthy rate is 0.25% to 0.75% of body weight per week. Faster than that
+# costs muscle, and the scale comes back up afterwards.
 objetivo:
   perder_peso: true
   ritmo_pct_semana: [-0.75, -0.25]
-  dias_descanso_por_semana: 1     # o resto passa a caminhada leve
+  dias_descanso_por_semana: 1     # the rest become easy walks
 
-# --- Bloqueio de segurança ---------------------------------------------------
-# Se qualquer destas condições se verificar, só sessões marcadas
-# "recovery_safe" ficam elegíveis. Avaliado em código, não pelo modelo.
+# --- Safety lock --------------------------------------------------------------
+# If any of these holds, only sessions marked "recovery_safe" stay eligible.
+# Evaluated in code, never by the model.
 recovery_flags:
-  rhr_delta_above: 5          # FC repouso 7d mais de 5 bpm acima da base 28d
-  hrv_drop_pct_below: -12     # HRV 7d mais de 12% abaixo da base
-  sleep_h_below: 6.0          # média de sono a 7 dias abaixo de 6 horas
-  tsb_below: -25              # fadiga acumulada excessiva
+  rhr_delta_above: 5          # 7-day resting HR more than 5 bpm above the 28-day base
+  hrv_drop_pct_below: -12     # 7-day HRV more than 12% below base
+  sleep_h_below: 6.0          # 7-day mean sleep under 6 hours
+  tsb_below: -25              # excessive accumulated fatigue
 
 workouts:
   - id: rest
-    name: Descanso completo
+    name:
+      en: Complete rest
+      pt: Descanso completo
+      es: Descanso completo
+      fr: Repos complet
+      de: Vollständige Ruhe
+      it: Riposo completo
+      zh: 完全休息
     load_est: 0
     recovery_safe: true
-    description: Sem treino estruturado. Caminhada leve se apetecer.
+    description:
+      en: No structured training. A gentle walk if you feel like it.
+      pt: Sem treino estruturado. Caminhada leve se apetecer.
+      es: Sin entrenamiento estructurado. Un paseo suave si te apetece.
+      fr: Pas d'entraînement structuré. Une marche tranquille si l'envie vient.
+      de: Kein strukturiertes Training. Ein lockerer Spaziergang, wenn dir danach ist.
+      it: Nessun allenamento strutturato. Una camminata leggera se ti va.
+      zh: 不做结构化训练。想动的话散散步就好。
 
   - id: easy_walk
-    name: Caminhada longa
+    name:
+      en: Long walk
+      pt: Caminhada longa
+      es: Caminata larga
+      fr: Marche longue
+      de: Langer Spaziergang
+      it: Camminata lunga
+      zh: 长距离步行
     load_est: 20
-    ritmo: "Anda a {caminhada} km/h, sem inclinação."
+    ritmo:
+      en: Walk at {caminhada} km/h, no incline.
+      pt: Anda a {caminhada} km/h, sem inclinação.
+      es: Camina a {caminhada} km/h, sin inclinación.
+      fr: Marche à {caminhada} km/h, sans inclinaison.
+      de: Geh mit {caminhada} km/h, ohne Steigung.
+      it: Cammina a {caminhada} km/h, senza pendenza.
+      zh: 以 {caminhada} 公里/小时步行，不加坡度。
     recovery_safe: true
     duration_min: 45
-    description: Ritmo conversável, zona 1. Mantém o hábito sem adicionar carga.
+    description:
+      en: Conversational pace, zone 1. Keeps the habit without adding load.
+      pt: Ritmo conversável, zona 1. Mantém o hábito sem adicionar carga.
+      es: Ritmo conversable, zona 1. Mantiene el hábito sin añadir carga.
+      fr: Allure de conversation, zone 1. Entretient l'habitude sans ajouter de charge.
+      de: Unterhaltungstempo, Zone 1. Hält die Gewohnheit, ohne Last hinzuzufügen.
+      it: Ritmo da conversazione, zona 1. Mantiene l'abitudine senza aggiungere carico.
+      zh: 能正常说话的节奏，1 区。保持习惯而不增加负荷。
 
   - id: easy_run
-    name: Corrida fácil
+    name:
+      en: Easy run
+      pt: Corrida fácil
+      es: Rodaje suave
+      fr: Footing facile
+      de: Lockerer Dauerlauf
+      it: Corsa facile
+      zh: 轻松跑
     load_est: 45
-    ritmo: "Passadeira a {facil} km/h. Se a conversa começar a custar, baixa meio km/h."
+    ritmo:
+      en: Treadmill at {facil} km/h. If talking starts to cost, drop half a km/h.
+      pt: Passadeira a {facil} km/h. Se a conversa começar a custar, baixa meio km/h.
+      es: Cinta a {facil} km/h. Si hablar empieza a costar, baja medio km/h.
+      fr: Tapis à {facil} km/h. Si parler devient difficile, baisse d'un demi km/h.
+      de: Laufband mit {facil} km/h. Wird das Sprechen schwer, geh ein halbes km/h runter.
+      it: Tapis roulant a {facil} km/h. Se parlare inizia a costare, cala di mezzo km/h.
+      zh: 跑步机 {facil} 公里/小时。如果说话开始吃力，降半档。
     recovery_safe: true
     duration_min: 35
     tsb_min: -20
-    description: >
-      Zona 2 do princípio ao fim. Se não consegues falar em frases inteiras,
-      abranda. É esta sessão que constrói a base aeróbia.
+    description:
+      en: >
+        Zone 2 from start to finish. If you cannot speak in full sentences,
+        slow down. This is the session that builds the aerobic base.
+      pt: >
+        Zona 2 do princípio ao fim. Se não consegues falar em frases inteiras,
+        abranda. É esta sessão que constrói a base aeróbia.
+      es: >
+        Zona 2 de principio a fin. Si no puedes hablar con frases enteras,
+        afloja. Esta es la sesión que construye la base aeróbica.
+      fr: >
+        Zone 2 du début à la fin. Si tu ne peux pas parler en phrases
+        complètes, ralentis. C'est cette séance qui construit la base aérobie.
+      de: >
+        Zone 2 von Anfang bis Ende. Wenn du nicht in ganzen Sätzen sprechen
+        kannst, werde langsamer. Diese Einheit baut die aerobe Grundlage.
+      it: >
+        Zona 2 dall'inizio alla fine. Se non riesci a parlare con frasi intere,
+        rallenta. È questa seduta che costruisce la base aerobica.
+      zh: >
+        全程 2 区。如果没法用完整句子说话，就慢下来。有氧基础正是由这种训练累积的。
 
   - id: treadmill_base
-    name: Passadeira contínua
+    name:
+      en: Steady treadmill run
+      pt: Passadeira contínua
+      es: Cinta continua
+      fr: Tapis en continu
+      de: Gleichmäßiger Laufbandlauf
+      it: Tapis roulant continuo
+      zh: 跑步机匀速跑
     load_est: 50
-    ritmo: "Passadeira a {facil} km/h com 1% de inclinação."
+    ritmo:
+      en: Treadmill at {facil} km/h with a 1% incline.
+      pt: Passadeira a {facil} km/h com 1% de inclinação.
+      es: Cinta a {facil} km/h con un 1% de inclinación.
+      fr: Tapis à {facil} km/h avec 1% d'inclinaison.
+      de: Laufband mit {facil} km/h bei 1% Steigung.
+      it: Tapis roulant a {facil} km/h con 1% di pendenza.
+      zh: 跑步机 {facil} 公里/小时，坡度 1%。
     recovery_safe: true
     duration_min: 40
     tsb_min: -20
-    description: >
-      Inclinação 1%, ritmo constante em zona 2. A inclinação compensa a
-      ausência de resistência do ar.
+    description:
+      en: >
+        1% incline, steady pace in zone 2. The incline makes up for the lack of
+        air resistance.
+      pt: >
+        Inclinação 1%, ritmo constante em zona 2. A inclinação compensa a
+        ausência de resistência do ar.
+      es: >
+        Inclinación del 1%, ritmo constante en zona 2. La inclinación compensa
+        la falta de resistencia del aire.
+      fr: >
+        1% d'inclinaison, allure constante en zone 2. L'inclinaison compense
+        l'absence de résistance de l'air.
+      de: >
+        1% Steigung, gleichmäßiges Tempo in Zone 2. Die Steigung gleicht den
+        fehlenden Luftwiderstand aus.
+      it: >
+        Pendenza all'1%, ritmo costante in zona 2. La pendenza compensa
+        l'assenza di resistenza dell'aria.
+      zh: >
+        坡度 1%，2 区匀速。坡度用来补上室内没有的空气阻力。
 
   - id: treadmill_intervals_short
-    name: Intervalos curtos na passadeira
+    name:
+      en: Short treadmill intervals
+      pt: Intervalos curtos na passadeira
+      es: Series cortas en cinta
+      fr: Fractionné court sur tapis
+      de: Kurze Laufbandintervalle
+      it: Ripetute brevi sul tapis roulant
+      zh: 跑步机短间歇
     load_est: 85
-    ritmo: "Aquecimento a {facil} km/h. Cada minuto forte a {forte} km/h, e a recuperação a andar a {caminhada} km/h."
+    ritmo:
+      en: Warm up at {facil} km/h. Each hard minute at {forte} km/h, recovery walking at {caminhada} km/h.
+      pt: Aquecimento a {facil} km/h. Cada minuto forte a {forte} km/h, e a recuperação a andar a {caminhada} km/h.
+      es: Calienta a {facil} km/h. Cada minuto fuerte a {forte} km/h, y la recuperación andando a {caminhada} km/h.
+      fr: Échauffement à {facil} km/h. Chaque minute rapide à {forte} km/h, récupération en marchant à {caminhada} km/h.
+      de: Einlaufen mit {facil} km/h. Jede harte Minute mit {forte} km/h, Erholung gehend mit {caminhada} km/h.
+      it: Riscaldamento a {facil} km/h. Ogni minuto forte a {forte} km/h, recupero camminando a {caminhada} km/h.
+      zh: 以 {facil} 公里/小时热身。每个快跑分钟 {forte} 公里/小时，恢复时以 {caminhada} 公里/小时步行。
     duration_min: 35
     tsb_min: -10
     days_since_hard_min: 2
     requires_fresh: true
-    description: >
-      10 min aquecimento, depois 8 x (1 min forte / 90 s a andar),
-      10 min a arrefecer. Entrada suave no trabalho anaeróbio.
+    description:
+      en: >
+        10 min warm-up, then 8 x (1 min hard / 90 s walking), 10 min cool-down.
+        A gentle way into anaerobic work.
+      pt: >
+        10 min aquecimento, depois 8 x (1 min forte / 90 s a andar),
+        10 min a arrefecer. Entrada suave no trabalho anaeróbio.
+      es: >
+        10 min de calentamiento, luego 8 x (1 min fuerte / 90 s andando),
+        10 min de vuelta a la calma. Entrada suave al trabajo anaeróbico.
+      fr: >
+        10 min d'échauffement, puis 8 x (1 min rapide / 90 s de marche),
+        10 min de retour au calme. Une entrée douce dans le travail anaérobie.
+      de: >
+        10 min einlaufen, dann 8 x (1 min hart / 90 s gehen), 10 min auslaufen.
+        Ein sanfter Einstieg in die anaerobe Arbeit.
+      it: >
+        10 min di riscaldamento, poi 8 x (1 min forte / 90 s camminando),
+        10 min di defaticamento. Un ingresso morbido nel lavoro anaerobico.
+      zh: >
+        热身 10 分钟，然后 8 组（快跑 1 分钟 / 步行 90 秒），放松 10 分钟。
+        这是进入无氧训练的温和方式。
 
   - id: treadmill_intervals_long
-    name: Intervalos longos na passadeira
+    name:
+      en: Long treadmill intervals
+      pt: Intervalos longos na passadeira
+      es: Series largas en cinta
+      fr: Fractionné long sur tapis
+      de: Lange Laufbandintervalle
+      it: Ripetute lunghe sul tapis roulant
+      zh: 跑步机长间歇
     load_est: 120
-    ritmo: "Aquecimento a {facil} km/h. Os 3 minutos fortes a {forte} km/h, os 2 minutos fáceis a {facil} km/h."
+    ritmo:
+      en: Warm up at {facil} km/h. The 3-minute efforts at {forte} km/h, the 2 easy minutes at {facil} km/h.
+      pt: Aquecimento a {facil} km/h. Os 3 minutos fortes a {forte} km/h, os 2 minutos fáceis a {facil} km/h.
+      es: Calienta a {facil} km/h. Los 3 minutos fuertes a {forte} km/h, los 2 minutos suaves a {facil} km/h.
+      fr: Échauffement à {facil} km/h. Les 3 minutes rapides à {forte} km/h, les 2 minutes faciles à {facil} km/h.
+      de: Einlaufen mit {facil} km/h. Die 3 harten Minuten mit {forte} km/h, die 2 lockeren mit {facil} km/h.
+      it: Riscaldamento a {facil} km/h. I 3 minuti forti a {forte} km/h, i 2 minuti facili a {facil} km/h.
+      zh: 以 {facil} 公里/小时热身。3 分钟快跑用 {forte} 公里/小时，2 分钟轻松用 {facil} 公里/小时。
     duration_min: 50
     tsb_min: -5
     ctl_min: 25
     days_since_hard_min: 3
     requires_fresh: true
-    description: >
-      15 min aquecimento, 5 x (3 min a ritmo forte / 2 min fácil),
-      10 min a arrefecer. Puxa pelo aeróbio alto.
+    description:
+      en: >
+        15 min warm-up, 5 x (3 min hard / 2 min easy), 10 min cool-down. This
+        one pushes the upper aerobic end.
+      pt: >
+        15 min aquecimento, 5 x (3 min a ritmo forte / 2 min fácil),
+        10 min a arrefecer. Puxa pelo aeróbio alto.
+      es: >
+        15 min de calentamiento, 5 x (3 min fuerte / 2 min suave), 10 min de
+        vuelta a la calma. Tira del aeróbico alto.
+      fr: >
+        15 min d'échauffement, 5 x (3 min rapide / 2 min facile), 10 min de
+        retour au calme. Ça tire sur le haut de l'aérobie.
+      de: >
+        15 min einlaufen, 5 x (3 min hart / 2 min locker), 10 min auslaufen.
+        Das fordert das obere aerobe Ende.
+      it: >
+        15 min di riscaldamento, 5 x (3 min forte / 2 min facile), 10 min di
+        defaticamento. Tira sull'aerobico alto.
+      zh: >
+        热身 15 分钟，5 组（快跑 3 分钟 / 轻松 2 分钟），放松 10 分钟。
+        这一课练的是有氧上限。
 
   - id: tempo
-    name: Contínuo em ritmo controlado
+    name:
+      en: Controlled tempo run
+      pt: Contínuo em ritmo controlado
+      es: Continuo a ritmo controlado
+      fr: Tempo contrôlé
+      de: Kontrollierter Tempolauf
+      it: Medio controllato
+      zh: 控制配速的持续跑
     load_est: 105
-    ritmo: "Os 20 minutos do meio a {tempo} km/h. Fica entre o fácil e o forte, incómodo mas sustentável."
+    ritmo:
+      en: The 20 minutes in the middle at {tempo} km/h. Between easy and hard, uncomfortable but sustainable.
+      pt: Os 20 minutos do meio a {tempo} km/h. Fica entre o fácil e o forte, incómodo mas sustentável.
+      es: Los 20 minutos centrales a {tempo} km/h. Entre lo suave y lo fuerte, incómodo pero sostenible.
+      fr: Les 20 minutes du milieu à {tempo} km/h. Entre facile et rapide, inconfortable mais tenable.
+      de: Die 20 Minuten in der Mitte mit {tempo} km/h. Zwischen locker und hart, unbequem aber haltbar.
+      it: I 20 minuti centrali a {tempo} km/h. Tra il facile e il forte, scomodo ma sostenibile.
+      zh: 中间 20 分钟用 {tempo} 公里/小时。介于轻松与吃力之间，难受但撑得住。
     duration_min: 45
     tsb_min: -8
     ctl_min: 30
     days_since_hard_min: 3
     requires_fresh: true
-    description: >
-      15 min fácil, 20 min a ritmo de esforço confortavelmente difícil,
-      10 min fácil.
+    description:
+      en: >
+        15 min easy, 20 min at a comfortably hard effort, 10 min easy.
+      pt: >
+        15 min fácil, 20 min a ritmo de esforço confortavelmente difícil,
+        10 min fácil.
+      es: >
+        15 min suave, 20 min a un esfuerzo cómodamente duro, 10 min suave.
+      fr: >
+        15 min facile, 20 min à un effort confortablement difficile, 10 min facile.
+      de: >
+        15 min locker, 20 min bei angenehm hartem Aufwand, 10 min locker.
+      it: >
+        15 min facile, 20 min a uno sforzo comodamente duro, 10 min facile.
+      zh: >
+        轻松 15 分钟，20 分钟保持"舒适地吃力"，再轻松 10 分钟。
 
   - id: long_run
-    name: Corrida longa
+    name:
+      en: Long run
+      pt: Corrida longa
+      es: Tirada larga
+      fr: Sortie longue
+      de: Langer Lauf
+      it: Lungo
+      zh: 长距离跑
     load_est: 95
-    ritmo: "Tudo a {facil} km/h ou menos. Se tiveres de abrandar no fim, abranda."
+    ritmo:
+      en: All of it at {facil} km/h or slower. If you have to slow at the end, slow.
+      pt: Tudo a {facil} km/h ou menos. Se tiveres de abrandar no fim, abranda.
+      es: Todo a {facil} km/h o menos. Si tienes que aflojar al final, afloja.
+      fr: Le tout à {facil} km/h ou moins. S'il faut ralentir à la fin, ralentis.
+      de: Alles mit {facil} km/h oder langsamer. Musst du am Ende langsamer werden, werde langsamer.
+      it: Tutto a {facil} km/h o meno. Se devi rallentare alla fine, rallenta.
+      zh: 全程 {facil} 公里/小时或更慢。如果最后需要减速，就减速。
     duration_min: 75
     tsb_min: -12
     ctl_min: 25
     days_since_hard_min: 2
-    description: Tudo em zona 2. Aumentar no máximo 10% face à mais longa recente.
+    description:
+      en: All in zone 2. Increase by at most 10% over your recent longest.
+      pt: Tudo em zona 2. Aumentar no máximo 10% face à mais longa recente.
+      es: Todo en zona 2. Aumentar como mucho un 10% sobre la más larga reciente.
+      fr: Tout en zone 2. Augmenter de 10% au maximum par rapport à la plus longue récente.
+      de: Alles in Zone 2. Höchstens 10% mehr als der längste Lauf zuletzt.
+      it: Tutto in zona 2. Aumentare al massimo del 10% rispetto al più lungo recente.
+      zh: 全程 2 区。比最近最长的一次最多增加 10%。
 
   - id: strength
-    name: Força para corredores
+    name:
+      en: Strength for runners
+      pt: Força para corredores
+      es: Fuerza para corredores
+      fr: Renforcement pour coureurs
+      de: Kraft für Läufer
+      it: Forza per corridori
+      zh: 跑者力量训练
     load_est: 30
     recovery_safe: true
     duration_min: 30
-    description: >
-      Agachamentos, afundos, elevação de gémeos, prancha. Duas a três séries.
-      Complementa sem competir pela mesma recuperação.
+    description:
+      en: >
+        Squats, lunges, calf raises, plank. Two to three sets. It complements
+        without competing for the same recovery.
+      pt: >
+        Agachamentos, afundos, elevação de gémeos, prancha. Duas a três séries.
+        Complementa sem competir pela mesma recuperação.
+      es: >
+        Sentadillas, zancadas, elevación de gemelos, plancha. Dos o tres series.
+        Complementa sin competir por la misma recuperación.
+      fr: >
+        Squats, fentes, élévations de mollets, gainage. Deux à trois séries.
+        Cela complète sans concurrencer la même récupération.
+      de: >
+        Kniebeugen, Ausfallschritte, Wadenheben, Unterarmstütz. Zwei bis drei
+        Sätze. Ergänzt, ohne um dieselbe Erholung zu konkurrieren.
+      it: >
+        Squat, affondi, calf raise, plank. Due o tre serie. Completa senza
+        competere per lo stesso recupero.
+      zh: >
+        深蹲、弓步、提踵、平板支撑。两到三组。它是补充，不会跟跑步抢同一份恢复。
 
-# --- Desenho das sessões -----------------------------------------------------
-# A estrutura serve a linha de tempo que aparece no modal de cada dia: a sessão
-# vista de lado, do aquecimento ao arrefecimento. Fica aqui em baixo, e não
-# dentro de cada sessão, para não partir os comentários do catálogo.
+# --- Session shape ------------------------------------------------------------
+# The structure feeds the timeline in each day's modal: the session seen from
+# the side, from warm-up to cool-down. It lives down here, rather than inside
+# each workout, to keep the catalogue readable.
 #
-# tipo: facil, forte ou andar. min é em minutos.
+# tipo: facil, forte or andar. min is in minutes.
 estruturas:
   easy_run:
-    - {min: 35, tipo: facil, nome: Zona 2 do princípio ao fim}
+    - {min: 35, tipo: facil, nome: {en: Zone 2 throughout, pt: Zona 2 do princípio ao fim,
+       es: Zona 2 de principio a fin, fr: Zone 2 du début à la fin, de: Durchgehend Zone 2,
+       it: Zona 2 dall'inizio alla fine, zh: 全程 2 区}}
   treadmill_base:
-    - {min: 40, tipo: facil, nome: Contínuo com 1% de inclinação}
+    - {min: 40, tipo: facil, nome: {en: Steady with 1% incline, pt: Contínuo com 1% de inclinação,
+       es: Continuo con 1% de inclinación, fr: Continu à 1% d'inclinaison,
+       de: Gleichmäßig bei 1% Steigung, it: Continuo con 1% di pendenza, zh: 1% 坡度匀速}}
   long_run:
-    - {min: 75, tipo: facil, nome: Zona 2, sem acelerar no fim}
+    - {min: 75, tipo: facil, nome: {en: Zone 2, no surge at the end, pt: Zona 2, sem acelerar no fim,
+       es: Zona 2, sin acelerar al final, fr: Zone 2, sans accélérer à la fin,
+       de: Zone 2, ohne Endspurt, it: Zona 2, senza accelerare alla fine, zh: 2 区，最后不要冲}}
   easy_walk:
-    - {min: 45, tipo: andar, nome: Ritmo conversável}
+    - {min: 45, tipo: andar, nome: {en: Conversational pace, pt: Ritmo conversável,
+       es: Ritmo conversable, fr: Allure de conversation, de: Unterhaltungstempo,
+       it: Ritmo da conversazione, zh: 能说话的节奏}}
   treadmill_intervals_short:
-    - {min: 10, tipo: facil, nome: Aquecimento}
+    - {min: 10, tipo: facil, nome: &warmup {en: Warm-up, pt: Aquecimento, es: Calentamiento,
+       fr: Échauffement, de: Einlaufen, it: Riscaldamento, zh: 热身}}
     - repete: 8
       blocos:
-        - {min: 1, tipo: forte, nome: Forte}
-        - {min: 1.5, tipo: andar, nome: A andar}
-    - {min: 10, tipo: facil, nome: Arrefecer}
+        - {min: 1, tipo: forte, nome: {en: Hard, pt: Forte, es: Fuerte, fr: Rapide,
+           de: Hart, it: Forte, zh: 快跑}}
+        - {min: 1.5, tipo: andar, nome: {en: Walking, pt: A andar, es: Andando,
+           fr: En marchant, de: Gehen, it: Camminando, zh: 步行}}
+    - {min: 10, tipo: facil, nome: &cooldown {en: Cool-down, pt: Arrefecer, es: Vuelta a la calma,
+       fr: Retour au calme, de: Auslaufen, it: Defaticamento, zh: 放松}}
   treadmill_intervals_long:
-    - {min: 15, tipo: facil, nome: Aquecimento}
+    - {min: 15, tipo: facil, nome: *warmup}
     - repete: 5
       blocos:
-        - {min: 3, tipo: forte, nome: Ritmo forte}
-        - {min: 2, tipo: facil, nome: Fácil}
-    - {min: 10, tipo: facil, nome: Arrefecer}
+        - {min: 3, tipo: forte, nome: {en: Hard pace, pt: Ritmo forte, es: Ritmo fuerte,
+           fr: Allure rapide, de: Hartes Tempo, it: Ritmo forte, zh: 快跑配速}}
+        - {min: 2, tipo: facil, nome: &easy {en: Easy, pt: Fácil, es: Suave, fr: Facile,
+           de: Locker, it: Facile, zh: 轻松}}
+    - {min: 10, tipo: facil, nome: *cooldown}
   tempo:
-    - {min: 15, tipo: facil, nome: Fácil}
-    - {min: 20, tipo: forte, nome: Confortavelmente difícil}
-    - {min: 10, tipo: facil, nome: Fácil}
+    - {min: 15, tipo: facil, nome: *easy}
+    - {min: 20, tipo: forte, nome: {en: Comfortably hard, pt: Confortavelmente difícil,
+       es: Cómodamente duro, fr: Confortablement difficile, de: Angenehm hart,
+       it: Comodamente duro, zh: 舒适地吃力}}
+    - {min: 10, tipo: facil, nome: *easy}
 
-# Os exercícios de força, com figura. Os nomes sozinhos não chegam a quem
-# nunca os fez.
+# The strength exercises, with a drawing. The names alone are no use to anyone
+# who has never done them.
 exercicios:
   strength:
-    - nome: Agachamento
-      series: 3 séries de 12
+    - nome: {en: Squat, pt: Agachamento, es: Sentadilla, fr: Squat, de: Kniebeuge,
+             it: Squat, zh: 深蹲}
+      series: {en: 3 sets of 12, pt: 3 séries de 12, es: 3 series de 12,
+               fr: 3 séries de 12, de: 3 Sätze zu 12, it: 3 serie da 12, zh: 3 组，每组 12 次}
       figura: agachamento
-      dica: Pés à largura dos ombros, desce como se te fosses sentar. Joelhos alinhados com os pés.
-    - nome: Afundo
-      series: 3 séries de 10 por perna
+      dica:
+        en: Feet shoulder-width apart, go down as if sitting. Knees tracking over the feet.
+        pt: Pés à largura dos ombros, desce como se te fosses sentar. Joelhos alinhados com os pés.
+        es: Pies al ancho de los hombros, baja como si fueras a sentarte. Rodillas alineadas con los pies.
+        fr: Pieds à la largeur des épaules, descends comme pour t'asseoir. Genoux alignés sur les pieds.
+        de: Füße schulterbreit, geh runter, als wolltest du dich setzen. Knie über den Füßen.
+        it: Piedi alla larghezza delle spalle, scendi come per sederti. Ginocchia allineate ai piedi.
+        zh: 双脚与肩同宽，像要坐下那样下蹲。膝盖与脚尖同向。
+    - nome: {en: Lunge, pt: Afundo, es: Zancada, fr: Fente, de: Ausfallschritt,
+             it: Affondo, zh: 弓步}
+      series: {en: 3 sets of 10 per leg, pt: 3 séries de 10 por perna,
+               es: 3 series de 10 por pierna, fr: 3 séries de 10 par jambe,
+               de: 3 Sätze zu 10 je Bein, it: 3 serie da 10 per gamba, zh: 每腿 3 组，每组 10 次}
       figura: afundo
-      dica: Um passo à frente, desce até o joelho de trás quase tocar no chão. Tronco direito.
-    - nome: Elevação de gémeos
-      series: 3 séries de 15
+      dica:
+        en: One step forward, down until the back knee nearly touches the floor. Torso upright.
+        pt: Um passo à frente, desce até o joelho de trás quase tocar no chão. Tronco direito.
+        es: Un paso adelante, baja hasta que la rodilla de atrás casi toque el suelo. Tronco recto.
+        fr: Un pas en avant, descends jusqu'à ce que le genou arrière frôle le sol. Buste droit.
+        de: Ein Schritt nach vorn, runter bis das hintere Knie fast den Boden berührt. Oberkörper aufrecht.
+        it: Un passo avanti, scendi finché il ginocchio dietro sfiora il pavimento. Busto dritto.
+        zh: 向前一步，下沉到后膝几乎触地。上身保持挺直。
+    - nome: {en: Calf raise, pt: Elevação de gémeos, es: Elevación de gemelos,
+             fr: Élévation de mollets, de: Wadenheben, it: Calf raise, zh: 提踵}
+      series: {en: 3 sets of 15, pt: 3 séries de 15, es: 3 series de 15,
+               fr: 3 séries de 15, de: 3 Sätze zu 15, it: 3 serie da 15, zh: 3 组，每组 15 次}
       figura: gemeos
-      dica: De pé, sobe nas pontas dos pés e desce devagar. Um degrau aumenta a amplitude.
-    - nome: Prancha
-      series: 3 de 30 a 45 segundos
+      dica:
+        en: Standing, rise onto your toes and come down slowly. A step adds range.
+        pt: De pé, sobe nas pontas dos pés e desce devagar. Um degrau aumenta a amplitude.
+        es: De pie, sube a las puntas y baja despacio. Un escalón aumenta el recorrido.
+        fr: Debout, monte sur la pointe des pieds et redescends lentement. Une marche augmente l'amplitude.
+        de: Im Stand auf die Zehenspitzen und langsam ablassen. Eine Stufe vergrößert den Weg.
+        it: In piedi, sali sulle punte e scendi lentamente. Un gradino aumenta l'escursione.
+        zh: 站立，踮起脚尖再缓慢放下。踩台阶可以加大幅度。
+    - nome: {en: Plank, pt: Prancha, es: Plancha, fr: Gainage, de: Unterarmstütz,
+             it: Plank, zh: 平板支撑}
+      series: {en: 3 of 30 to 45 seconds, pt: 3 de 30 a 45 segundos,
+               es: 3 de 30 a 45 segundos, fr: 3 de 30 à 45 secondes,
+               de: 3 mal 30 bis 45 Sekunden, it: 3 da 30 a 45 secondi, zh: 3 组，每组 30 到 45 秒}
       figura: prancha
-      dica: Antebraços no chão, corpo em linha reta dos ombros aos calcanhares. Não deixes descair a anca.
+      dica:
+        en: Forearms down, body in a straight line from shoulders to heels. Do not let the hips drop.
+        pt: Antebraços no chão, corpo em linha reta dos ombros aos calcanhares. Não deixes descair a anca.
+        es: Antebrazos en el suelo, cuerpo en línea recta de hombros a talones. No dejes caer la cadera.
+        fr: Avant-bras au sol, corps en ligne droite des épaules aux talons. Ne laisse pas tomber le bassin.
+        de: Unterarme am Boden, Körper in einer Linie von den Schultern bis zu den Fersen. Die Hüfte nicht absinken lassen.
+        it: Avambracci a terra, corpo in linea retta dalle spalle ai talloni. Non far cadere il bacino.
+        zh: 前臂着地，从肩到脚跟成一直线。别让臀部下沉。
