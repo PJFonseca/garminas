@@ -463,14 +463,29 @@ def _modal(d: dict, ln: str) -> str:
 
 
 def _pontos(serie: list[dict], campo: str = "v") -> list[tuple]:
-    """(data em dias, valor), ordenado, para o eixo do X ser mesmo tempo."""
-    saida = []
+    """(data em dias, valor), ordenado, para o eixo do X ser mesmo tempo.
+
+    Duas ou três sessões no mesmo dia caíam no mesmo X: a linha ficava
+    vertical e a etiqueta só alcançava uma delas. Ficam espalhadas dentro do
+    próprio dia, que é onde de facto aconteceram, e assim cada uma tem lugar.
+    A série não guarda a hora, por isso a ordem é a que vem, não a real.
+    """
+    bruto = []
     for p in serie or []:
         try:
-            saida.append((_date.fromisoformat(p["date"]).toordinal(), float(p[campo])))
+            bruto.append((_date.fromisoformat(p["date"]).toordinal(), float(p[campo])))
         except (KeyError, TypeError, ValueError):
             continue
-    return sorted(saida)
+    bruto.sort()
+    quantos: dict[int, int] = {}
+    for dia, _ in bruto:
+        quantos[dia] = quantos.get(dia, 0) + 1
+    visto: dict[int, int] = {}
+    saida = []
+    for dia, valor in bruto:
+        i = visto[dia] = visto.get(dia, 0) + 1
+        saida.append((dia + (i - 1) / quantos[dia], valor))
+    return saida
 
 
 def _serie_svg(pontos: list[tuple], alto: int = 90, sombra: bool = True,
