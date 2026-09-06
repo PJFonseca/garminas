@@ -13,9 +13,11 @@ carrega significado sozinha; há sempre rótulo ao lado.
 from __future__ import annotations
 
 import re
+from datetime import date as _date
 from html import escape
 
 from assess import ESTADOS, desporto
+from plan import DIAS
 from language import APP
 from language import t as _t
 from figures import CSS as FIG_CSS, exercicios, linha_tempo
@@ -58,6 +60,11 @@ CSS = """
 .correu .rotulo b { color:var(--s1); font-size:.95rem; }
 .correu p { margin:0; font-size:1.05rem; line-height:1.55; max-width:74ch; }
 .correu .factos { margin-top:.6rem; font-size:.85rem; color:var(--dim); }
+.correu .rotulo .data { margin-left:auto; text-transform:none; letter-spacing:0; }
+tr.clicavel { cursor:pointer; }
+tr.clicavel:hover td, tr.clicavel:focus-visible td { background:color-mix(in srgb, var(--s1) 9%, transparent); }
+tr.clicavel td:first-child { position:relative; }
+tr.clicavel td:first-child::after { content:"›"; position:absolute; right:.2rem; color:var(--dim); }
 
 /* Parciais e zonas. O comprimento das barras diz o que os números sozinhos
    demoram a dizer: onde acelerou, onde caiu, onde passou o tempo todo. */
@@ -170,6 +177,44 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
 .prose li { margin:.25rem 0; text-wrap:pretty; }
 .legend { font-size:.8rem; color:var(--dim); margin:.2rem 0 1.5rem; }
 .num { font-variant-numeric:tabular-nums; text-align:right; }
+
+/* Séries no tempo. O traço é SVG e os rótulos são HTML, como no gráfico de
+   barras: texto dentro de um viewBox encolhe com ele e fica ilegível numa
+   coluna estreita. O eixo do X é o tempo e não a posição na lista, porque
+   doze dias sem correr são doze dias, e espaçá-los por igual mentia sobre a
+   pausa. */
+.serie { position:relative; margin:.7rem 0 .2rem; }
+.serie svg { width:100%; height:auto; display:block; overflow:visible; }
+.serie .traco { fill:none; stroke:var(--s1); stroke-width:2;
+  vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round; }
+.serie .sombra { fill:var(--s1); opacity:.09; }
+.serie .pt { fill:var(--s1); }
+.serie .alvo { fill:transparent; }
+.serie .ref { stroke:var(--dim); stroke-width:1; stroke-dasharray:4 4; opacity:.55;
+  vector-effect:non-scaling-stroke; }
+.serie .faixa { fill:var(--s1); opacity:.07; }
+.rotulo-ref { position:absolute; left:0; font-size:.7rem; color:var(--dim);
+  background:var(--bg); padding:0 .25rem; transform:translateY(-50%); }
+.rotulo-ref.dir { left:auto; right:0; }
+.serie-topo { display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+.serie-topo h4 { margin:0; font-size:.78rem; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--dim); font-weight:600; }
+.serie-topo .agora { font-size:1.05rem; font-weight:600; font-variant-numeric:tabular-nums; }
+.pequenos { display:grid; gap:1.4rem 1.8rem; margin:1rem 0 .4rem;
+  grid-template-columns:repeat(auto-fit,minmax(17rem,1fr)); }
+
+/* Composição corporal. A direção da seta é que carrega o significado: verde e
+   vermelho dão ΔE 4.1 em deuteranopia, medido, praticamente a mesma cor para
+   quem não distingue as duas. A cor só reforça o que a seta e o sinal já
+   dizem, e por isso há sempre também a palavra. */
+.comp { width:100%; margin:.8rem 0 .3rem; font-size:.9rem; }
+.comp th { font-size:.75rem; }
+.comp .seta { font-size:1rem; margin-right:.3rem; }
+.comp .melhor { color:var(--good); }
+.comp .pior { color:var(--critical); }
+.comp .igual { color:var(--dim); }
+.comp .juizo { font-size:.78rem; }
+
 
 .tile { position:relative; }
 .tile.e-good     { border-left:3px solid var(--good); }
@@ -408,6 +453,208 @@ def _modal(d: dict, ln: str) -> str:
             f'{"".join(partes)}</div></dialog>')
 
 
+def _pontos(serie: list[dict], campo: str = "v") -> list[tuple]:
+    """(data em dias, valor), ordenado, para o eixo do X ser mesmo tempo."""
+    saida = []
+    for p in serie or []:
+        try:
+            saida.append((_date.fromisoformat(p["date"]).toordinal(), float(p[campo])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(saida)
+
+
+def _serie_svg(pontos: list[tuple], alto: int = 90, sombra: bool = True,
+               refs: list[float] | None = None, fmt=lambda v: f"{v:g}",
+               datas: list[str] | None = None) -> tuple[str, dict]:
+    """Uma série no tempo, em SVG. Devolve também onde ficou cada referência.
+
+    Uma só série, por isso não leva legenda: o título ao lado já a nomeia. Os
+    pontos ganham um alvo invisível maior do que o desenho, porque acertar com
+    o rato num círculo de três pixels não é interação, é pontaria.
+    """
+    if len(pontos) < 2:
+        return "", {}
+    L = 600
+    xs = [p[0] for p in pontos]
+    ys = [p[1] for p in pontos]
+    x0, x1 = min(xs), max(xs)
+    lo, hi = min(ys + (refs or [])), max(ys + (refs or []))
+    if hi == lo:
+        lo, hi = lo - 1, hi + 1
+    folga = (hi - lo) * 0.12
+    lo, hi = lo - folga, hi + folga
+
+    def px(x):
+        return (x - x0) / (x1 - x0) * L if x1 > x0 else L / 2
+
+    def py(y):
+        return alto - (y - lo) / (hi - lo) * alto
+
+    caminho = " ".join(f"{'M' if i == 0 else 'L'}{px(x):.1f} {py(y):.1f}"
+                       for i, (x, y) in enumerate(pontos))
+    partes = []
+    if sombra:
+        partes.append(f'<path class=sombra d="{caminho} L{px(xs[-1]):.1f} {alto} '
+                      f'L{px(xs[0]):.1f} {alto} Z"/>')
+    for v in (refs or []):
+        partes.append(f'<line class=ref x1="0" y1="{py(v):.1f}" x2="{L}" y2="{py(v):.1f}"/>')
+    partes.append(f'<path class=traco d="{caminho}"/>')
+    for i, (x, y) in enumerate(pontos):
+        quando = (datas[i] if datas and i < len(datas) else "")
+        partes.append(
+            f'<g><title>{escape(quando)}{" · " if quando else ""}{escape(fmt(y))}</title>'
+            f'<circle class=alvo cx="{px(x):.1f}" cy="{py(y):.1f}" r="12"/>'
+            f'<circle class=pt cx="{px(x):.1f}" cy="{py(y):.1f}" r="3"/></g>')
+    svg = (f'<svg viewBox="0 0 {L} {alto}" preserveAspectRatio=none role=img '
+           f'aria-label="{escape(fmt(ys[0]))} a {escape(fmt(ys[-1]))}">'
+           f'{"".join(partes)}</svg>')
+    return svg, {v: py(v) / alto * 100 for v in (refs or [])}
+
+
+def _bloco_serie(titulo: str, serie: list[dict], agora: str, alto: int = 90,
+                 refs: list[tuple] | None = None, fmt=lambda v: f"{v:g}") -> str:
+    """Título, valor de agora, o traço, e as datas das pontas por baixo."""
+    pontos = _pontos(serie)
+    if len(pontos) < 2:
+        return ""
+    valores = [v for _, v in (refs or [])]
+    svg, alturas = _serie_svg(pontos, alto, refs=valores, fmt=fmt,
+                              datas=[p["date"] for p in serie])
+    marcas = "".join(
+        f'<span class="rotulo-ref dir" style="top:{alturas[v]:.1f}%">{escape(rot)}</span>'
+        for rot, v in (refs or []) if v in alturas)
+    primeira, ultima = serie[0]["date"], serie[-1]["date"]
+    return (f'<div><div class=serie-topo><h4>{titulo}</h4>'
+            f'<span class=agora>{escape(agora)}</span></div>'
+            f'<div class=serie>{svg}{marcas}</div>'
+            f'<div class=axis><span style="text-align:left">{primeira}</span>'
+            f'<span style="text-align:right">{ultima}</span></div></div>')
+
+
+def _grafico_evolucao(ef: dict, ln: str) -> str:
+    """O índice de eficiência ao longo das sessões, com as duas médias.
+
+    Os pontos sozinhos não respondem: o próprio índice avisa que uma sessão
+    isolada mente, porque calor, passadeira e um tiro único deslocam a média
+    cardíaca. O que responde são as duas linhas, a média das recentes contra a
+    média das anteriores, que é a comparação que o texto já faz por palavras.
+    """
+    if not ef.get("has_data") or len(ef.get("series") or []) < 2:
+        return ""
+    serie = [{"date": p["date"], "v": p["ef"]} for p in ef["series"]]
+    refs = [(_t("ui.previous_n", ln, n=ef["n_before"]), ef["before"]),
+            (_t("ui.last_n", ln, n=ef["n_recent"]), ef["now"])]
+    sinal = "+" if ef["pct"] > 0 else ""
+    return _bloco_serie(_t("ui.ef_index", ln), serie, f'{sinal}{ef["pct"]}%',
+                        alto=110, refs=refs, fmt=lambda v: f"{v:.3f}")
+
+
+def _grafico_bem_estar(be: dict, ln: str) -> str:
+    """Sono, stress e Body Battery, um gráfico cada.
+
+    Horas e dois índices de 0 a 100 não partilham eixo. Sobrepô-los num só,
+    com duas escalas, faria as três linhas cruzarem-se em sítios que não
+    querem dizer nada. Três pequenos, mesmo eixo do tempo, é a forma certa.
+    """
+    if not be.get("has_data"):
+        return ""
+    especie = (
+        ("sono", "ui.sleep_hours", lambda v: f"{v:.1f} h"),
+        ("stress", "ui.stress_avg", lambda v: f"{v:.0f}"),
+        ("body_battery", "ui.bb_wake", lambda v: f"{v:.0f}"),
+    )
+    blocos = []
+    for chave, titulo, fmt in especie:
+        serie = be.get(chave) or []
+        if len(serie) < 2:
+            continue
+        # A média da janela como referência, como no gráfico das semanas: sem
+        # ela, um valor alto e um valor baixo são só dois números.
+        media = sum(p["v"] for p in serie) / len(serie)
+        blocos.append(_bloco_serie(
+            _t(titulo, ln), serie, fmt(serie[-1]["v"]), alto=70,
+            refs=[(_t("ui.average", ln, n=fmt(media)), media)], fmt=fmt))
+    return f'<div class=pequenos>{"".join(blocos)}</div>' if blocos else ""
+
+
+def _composicao(medidas: list[dict], ln: str) -> str:
+    """O que subiu e o que desceu, medida a medida.
+
+    Perder peso e perder músculo apontam para o mesmo lado do eixo e são o
+    contrário uma da outra, por isso cada medida traz consigo se subir é bom.
+    A seta e o sinal dizem tudo sozinhos: verde contra vermelho dá ΔE 4.1 em
+    deuteranopia, medido, e para quem não os distingue a cor não existe.
+    """
+    if not medidas:
+        return ""
+    linhas = []
+    for m in medidas:
+        d = m["delta"]
+        if abs(d) < 0.05:
+            css, seta, palavra = "igual", "→", _t("ui.unchanged", ln)
+        else:
+            bom = (d > 0) == m["sobe_e_bom"]
+            css = "melhor" if bom else "pior"
+            seta = "↑" if d > 0 else "↓"
+            palavra = _t("ui.better" if bom else "ui.worse", ln)
+        u = f' {m["unidade"]}' if m["unidade"] else ""
+        linhas.append(
+            f'<tr><td>{_t("m." + m["campo"], ln)}</td>'
+            f'<td class=num>{m["agora"]}{escape(u)}</td>'
+            f'<td class="num {css}"><span class=seta>{seta}</span>{d:+g}{escape(u)}</td>'
+            f'<td class="juizo {css}">{palavra}</td></tr>')
+    desde = medidas[0]["desde"]
+    return (f'<table class=comp><tr><th></th><th class=num>{_t("th.now", ln)}</th>'
+            f'<th class=num colspan=2>{_t("th.change", ln)}, {desde}</th></tr>'
+            f'{"".join(linhas)}</table>')
+
+
+def _grafico_peso(p: dict, ln: str) -> str:
+    if not p.get("has_data"):
+        return ""
+    grafico = _bloco_serie(_t("m.weight", ln), p.get("serie") or [],
+                           f'{(p["serie"] or [{}])[-1].get("v", "")} kg',
+                           alto=90, fmt=lambda v: f"{v:.1f} kg")
+    return grafico + _composicao(p.get("medidas") or [], ln)
+
+
+def _quando(iso: str, ln: str) -> str:
+    """Sábado, 2026-09-05.
+
+    A data sozinha não diz a ninguém se o treino foi ontem ou na semana
+    passada. O dia da semana já está traduzido nas sete línguas para o plano,
+    por isso sai de graça.
+    """
+    try:
+        d = _date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return escape(iso or "")
+    return f'{(DIAS.get(ln) or DIAS["en"])[d.weekday()]}, {iso}'
+
+
+def _modal_sessao(s: dict, ln: str) -> str:
+    """Uma sessão da tabela, aberta ao clicar.
+
+    Os parciais e as zonas existiam só para o último treino. São os mesmos
+    dados para qualquer um da lista, e a tabela sozinha responde "quanto" mas
+    nunca "como".
+    """
+    factos = []
+    if s.get("km"):
+        factos.append(f'{s["km"]} km')
+    if s.get("avg_hr"):
+        factos.append(f'{s["avg_hr"]} bpm')
+    factos.append(f'{_t("ui.load", ln)} {s["load"]}')
+    detalhe = _splits(s.get("splits") or [], ln) + _zonas(s.get("zones") or [], ln)
+    return (f'<dialog id="sessao-{s["id"]}"><div class=modal>'
+            f'<button class=fechar aria-label=Fechar>&times;</button>'
+            f'<div class=quando>{_quando(s["date"], ln)}</div>'
+            f'<h3>{escape(desporto(s["sport"], ln))}, {s["minutes"]} min</h3>'
+            f'<p class=ritmo>{" · ".join(factos)}</p>'
+            f'<div class=detalhe>{detalhe}</div></div></dialog>')
+
+
 _FORTE = re.compile(r"\*\*(.+?)\*\*", re.S)
 _ITEM = re.compile(r"^(?:[*\-\u2022]|(\d+)[.)])\s+")
 
@@ -544,7 +791,8 @@ def report_html(d: dict) -> str:
             if sessao.get("zones") else _splits(sessao.get("splits") or [], ln)
         correu_html = (
             f'<div class=correu><div class=rotulo><b>{escape(APP)}</b> '
-            f'{_t("ui.como_correu", ln)}</div>'
+            f'{_t("ui.como_correu", ln)}'
+            f'<span class=data>{_quando(sessao["date"], ln)}</span></div>'
             f'<p>{escape(comentario or sessao["veredicto"])}</p>'
             f'<div class=factos>{escape(desporto(sessao["sport"], ln))}, '
             f'{sessao["minutes"]} min, {" · ".join(factos)}</div>'
@@ -567,16 +815,40 @@ def report_html(d: dict) -> str:
         flags = (f'<div class=callout><h3>⚠ {_t("ui.flags", ln)}</h3><ul>{itens}</ul>'
                  f'<p class=legend>{_t("ui.flags_sub", ln)}</p></div>')
 
-    sessoes = "".join(
-        f'<tr><td>{s["date"]}</td><td>{escape(desporto(s["sport"], ln))}</td>'
-        f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or ""}</td>'
-        f'<td class=num>{s["avg_hr"] or ""}</td><td class=num>{s["load"]}</td></tr>'
-        for s in m["recent"])
+    linhas, modais = [], []
+    for s in m["recent"]:
+        # Só é clicável o que tem alguma coisa para mostrar. Um cursor de mão
+        # sobre uma linha que abre um modal vazio é pior do que linha nenhuma.
+        abre = bool(s.get("id")) and bool(s.get("splits") or s.get("zones"))
+        attr = f' class=clicavel tabindex=0 role=button data-sessao="{s["id"]}"' if abre else ""
+        linhas.append(
+            f'<tr{attr}><td>{s["date"]}</td><td>{escape(desporto(s["sport"], ln))}</td>'
+            f'<td class=num>{s["minutes"]}</td><td class=num>{s["km"] or ""}</td>'
+            f'<td class=num>{s["avg_hr"] or ""}</td><td class=num>{s["load"]}</td></tr>')
+        if abre:
+            modais.append(_modal_sessao(s, ln))
+    sessoes = "".join(linhas)
 
     # "Como correu" e "A seguir" respondem às duas perguntas do momento e são
     # cartões da mesma ordem de grandeza, por isso enchem bem uma linha a dois.
     # Empilhados deixavam meio ecrã em branco. Sem sessão para comentar, o que
     # vem a seguir fica com a linha inteira, que é o que faz sentido sozinho.
+    # Evolução e composição respondem à mesma pergunta por dois caminhos, e o
+    # bem-estar é largo porque são três gráficos pequenos lado a lado.
+    evolucao = _grafico_evolucao(m.get("efficiency") or {}, ln)
+    peso = _grafico_peso(m.get("peso") or {}, ln)
+    bem_estar = _grafico_bem_estar(m.get("bem_estar") or {}, ln)
+    tendencias = ""
+    if evolucao or peso:
+        tendencias = (
+            f'<div class=painéis><div class=painel>'
+            + (f'<h2>{_t("ui.evolution", ln)}</h2>{evolucao}' if evolucao else "")
+            + f'</div><div class=painel>'
+            + (f'<h2>{_t("ui.body_comp", ln)}</h2>{peso}' if peso else "")
+            + '</div></div>')
+    if bem_estar:
+        tendencias += f'<h2>{_t("ui.wellbeing", ln)}</h2>{bem_estar}'
+
     seguir_html = _seguir(plan["days"][0], hoje, ln)
     topo = (f'<div class=painéis><div class=painel>{correu_html}</div>'
             f'<div class=painel>{seguir_html}</div></div>'
@@ -596,6 +868,7 @@ def report_html(d: dict) -> str:
 {flags}
 
 {estado_html}
+{tendencias}
 
 <div class=painéis>
   <div class=painel>
@@ -636,6 +909,7 @@ def report_html(d: dict) -> str:
   </div>
 </div>
 
+{"".join(modais)}
 <hr>
 <p class=legend>{_t("ui.disclaimer", ln)}</p>
 </div>"""

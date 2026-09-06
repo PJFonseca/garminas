@@ -569,13 +569,16 @@ def page(title: str, body: str, script: str = "", wide: bool = False) -> str:
 
 
 MODAL_JS = """<script>
-document.querySelectorAll('.day[data-dia]').forEach(c => {
-  const abrir = () => document.getElementById('dia-' + c.dataset.dia)?.showModal();
-  c.addEventListener('click', abrir);
-  c.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+const ligar = (sel, campo, prefixo) =>
+  document.querySelectorAll(sel).forEach(c => {
+    const abrir = () => document.getElementById(prefixo + c.dataset[campo])?.showModal();
+    c.addEventListener('click', abrir);
+    c.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); abrir(); }
+    });
   });
-});
+ligar('.day[data-dia]', 'dia', 'dia-');
+ligar('tr[data-sessao]', 'sessao', 'sessao-');
 document.querySelectorAll('dialog').forEach(d => {
   d.querySelector('.fechar')?.addEventListener('click', () => d.close());
   d.addEventListener('click', e => { if (e.target === d) d.close(); });

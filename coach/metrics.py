@@ -188,6 +188,7 @@ def recent_sessions(acts: list[dict], n: int = 12) -> list[dict]:
     """As últimas n sessões, da mais recente para a mais antiga."""
     return [{
         "date": a["date"].isoformat(),
+        "id": a.get("id"),
         "sport": a["sport"],
         "minutes": round(a["duration_s"] / 60),
         "km": round(a["distance_m"] / 1000, 1),
@@ -553,6 +554,94 @@ def eficiencia(acts: list[dict]) -> dict:
     }
 
 
+def series_bem_estar(con, today: date, dias: int = 56) -> dict:
+    """Sono, stress e Body Battery, dia a dia.
+
+    O contexto_extra traz o último valor de cada um, que responde "como está
+    hoje" e nunca "para onde vai". São três medidas em escalas diferentes,
+    horas contra dois índices de 0 a 100, por isso saem em três gráficos
+    pequenos e nunca com dois eixos no mesmo.
+    """
+    desde = (today - timedelta(days=dias)).isoformat()
+
+    def puxa(sql):
+        try:
+            return [{"date": r[0], "v": round(float(r[1]), 2)}
+                    for r in con.execute(sql, (desde,)) if r[1] is not None]
+        except sqlite3.Error:
+            return []
+
+    saida = {
+        "sono": puxa("SELECT calendar_date, sleep_time_seconds/3600.0 FROM sleep"
+                     " WHERE calendar_date >= ? AND sleep_time_seconds"
+                     " ORDER BY calendar_date"),
+        "stress": puxa("SELECT calendar_date, avg_stress FROM stress"
+                       " WHERE calendar_date >= ? AND avg_stress"
+                       " ORDER BY calendar_date"),
+        "body_battery": puxa("SELECT calendar_date, at_wake FROM body_battery"
+                             " WHERE calendar_date >= ? AND at_wake"
+                             " ORDER BY calendar_date"),
+    }
+    saida["has_data"] = any(saida[k] for k in ("sono", "stress", "body_battery"))
+    saida["desde"] = desde
+    return saida
+
+
+# Para cada medida da composição corporal, se subir é bom ou mau. Sem isto uma
+# seta verde não significa nada: perder peso e perder músculo são a mesma
+# direção no eixo e o contrário um do outro na realidade.
+COMPOSICAO = [
+    ("weight", "kg", False, 1),
+    ("bmi", "", False, 1),
+    ("body_fat", "%", False, 1),
+    ("muscle_mass", "kg", True, 1),
+]
+
+
+def series_peso(con, spec, today: date, dias: int = 180) -> dict:
+    """Peso e composição ao longo do tempo, e o que mudou em cada medida.
+
+    O body() responde "quanto pesas agora e para onde vais". Isto responde
+    outra coisa: o que subiu e o que desceu, medida a medida, para se ver de
+    relance que a balança pode estar quieta enquanto a gordura e o músculo
+    trocam de lugar.
+    """
+    limite = today - timedelta(days=dias)
+    series = {campo: daily_series(con, spec, campo, limite)
+              for campo, _, _, _ in COMPOSICAO}
+    if not series.get("weight"):
+        return {"has_data": False}
+
+    def em_kg(campo, v):
+        # A Garmin dá gramas quando a balança é dela e quilos quando o valor
+        # entra à mão. A mesma regra do body(), pela mesma razão.
+        return v / 1000 if campo in ("weight", "muscle_mass") and v > 1000 else v
+
+    medidas = []
+    for campo, unidade, sobe_e_bom, casas in COMPOSICAO:
+        pontos = sorted((series.get(campo) or {}).items())
+        if len(pontos) < 2:
+            continue
+        agora = em_kg(campo, pontos[-1][1])
+        # A referência é a leitura mais antiga da janela, não a anterior: entre
+        # duas pesagens seguidas cabe o que se bebeu ao almoço.
+        antes = em_kg(campo, pontos[0][1])
+        medidas.append({
+            "campo": campo, "unidade": unidade, "sobe_e_bom": sobe_e_bom,
+            "agora": round(agora, casas), "antes": round(antes, casas),
+            "delta": round(agora - antes, casas),
+            "desde": pontos[0][0].isoformat(), "n": len(pontos),
+        })
+
+    peso = sorted(series["weight"].items())
+    return {
+        "has_data": bool(medidas),
+        "serie": [{"date": d.isoformat(), "v": round(em_kg("weight", v), 1)}
+                  for d, v in peso],
+        "medidas": medidas,
+    }
+
+
 def contexto_extra(con, today: date) -> dict:
     """Tudo o que a Garmin sabe e o relatório ainda não usava.
 
@@ -763,11 +852,16 @@ def build(con, ln: str = "en") -> dict:
             "sleep_score_7d": mean(recent(sleep_score, 7)),
         },
         "by_sport_28d": by_sport,
-        "recent": recent_sessions(acts),
+        # Com os parciais e as zonas de cada uma, não só da última. A tabela
+        # dizia a data e a carga e mais nada, e quem quer ver como correu um
+        # treino de há duas semanas não tinha onde carregar.
+        "recent": [{**s, **detalhe_sessao(con, s["id"])} for s in recent_sessions(acts)],
         "body": body(con, spec.get("weight", {"table": []}), today),
         "paces": paces(acts),
         "efficiency": eficiencia(acts),
         "extra": contexto_extra(con, today),
+        "bem_estar": series_bem_estar(con, today),
+        "peso": series_peso(con, spec.get("weight", {"table": []}), today),
         "sessao": notas_do_detalhe(
             {**sessao_recente(acts, paces(acts), today, ln),
              **detalhe_sessao(con, (acts[-1].get("id") if acts else None)),
