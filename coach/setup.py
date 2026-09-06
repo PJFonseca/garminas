@@ -44,9 +44,10 @@ CATALOGUE = [
         "id": "gemma3-12b",
         "name": "Gemma 3 12B Instruct",
         "mib": 6962,
-        "note": "O melhor texto, e o que melhor percebe o que lhe pedes. Precisa de 8 GB "
-                "livres. Em 2 núcleos leva 1 a 3 horas por relatório, o que não é problema "
-                "para uma coisa que corre de madrugada, uma vez por dia. Põe LLM_MEM=12g.",
+        "note": "O melhor texto, e o que melhor percebe o que lhe pedes. Precisa de 12 GB "
+                "de memória livre: com menos, o relatório demora horas e o modelo acaba "
+                "por morrer. Em 2 núcleos leva 1 a 3 horas, o que não é problema para uma "
+                "coisa que corre de madrugada, uma vez por dia.",
         "url": "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
     },
     {

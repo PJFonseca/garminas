@@ -105,7 +105,7 @@ Short on purpose, because this runs on CPU:
 
 | | Size | On two cores | Notes |
 |---|---|---|---|
-| Gemma 3 12B Instruct | 6.8 GiB | 1 to 3 hours | Recommended. The best writing, and the one that best follows what you ask it for. Needs `LLM_MEM=12g`. |
+| Gemma 3 12B Instruct | 6.8 GiB | 1 to 3 hours | The best writing, and the one that best follows what you ask it for. Wants 12 GB of RAM free, so it is the wrong pick on a two-core NAS with 4. |
 | Qwen3 4B Instruct | 2.3 GiB | 3 minutes | The choice if you would rather not wait. |
 | Gemma 3 4B Instruct | 2.3 GiB | 3 minutes | Looser prose, sometimes more verbose. |
 | Llama 3.2 3B Instruct | 1.9 GiB | 2 minutes | Faster, slightly less fluent. |
@@ -183,9 +183,11 @@ If you know your DSM user id and group id, put them in `PUID` and `PGID` so
 the files under `data/` belong to you rather than to root. It works either
 way.
 
-Two containers ask for 2 GB and the model asks for 6, so a DS923+ with the
-stock 4 GB will be tight. With 16 GB there is room for the 12B model, in which
-case raise the model's `mem_limit` to `12g`.
+Two containers ask for 2 GB and the model asks for 12, so a DS923+ with the
+stock 4 GB will be tight and should run a 4B. The 12 is a ceiling, not a
+reservation: a 4B under it takes its 2.5 GiB and no more. Do not lower it to
+match a small model. A ceiling below the weights is the one setting that turns
+a slow report into a dead one.
 
 ## Moving it to a NAS with a shell
 
@@ -280,8 +282,26 @@ again.
 **Chrome crashes mid-sync.** Raise `shm_size` in `docker-compose.yml`. Chrome
 needs real shared memory and the Docker default of 64 MB is nowhere near enough.
 
-**The container is killed.** Lower `LLM_MEM`, or the sync scope with
-`--profile health`. Chrome peaks around 1 GB and a 4B model wants about 4.
+**The model container is killed, or a report takes hours.** Both are the same
+fault, and the fix is the opposite of what it looks like: `LLM_MEM` is *below*
+the model. Weights are memory mapped, so a ceiling under their size does not
+fail at load time, it evicts and re-reads them from disk on every token. A
+DS923+ running the 6.8 GiB 12B under a 6g ceiling generated at 0.14 tokens a
+second, took 59 minutes for one section, and was then killed with exit 137.
+
+Compare the two numbers:
+
+```bash
+docker exec garminas-llm ls -l /models/model.gguf     # what the weights need
+docker stats --no-stream garminas-llm                 # what the ceiling allows
+```
+
+Sitting at 99% of the limit while idle is the symptom. Raise `LLM_MEM` above
+the file size with room to spare, 12g for a 12B, or pick a smaller model.
+
+**Chrome is killed mid-sync.** Different container, real memory pressure. It
+peaks around 1 GB; narrow the sync with `--profile health` if the box is
+small.
 
 **Empty HRV, Body Battery or training readiness.** These need a compatible
 device: Fenix 7 and later, Forerunner 265 and later, Venu 3 and later.

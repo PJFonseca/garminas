@@ -332,6 +332,28 @@ def _numbers(text: str) -> set[str]:
     return out
 
 
+FIM_DE_FRASE = re.compile(r"""[.!?][\"'»)\]]?(?=\s|$)""")
+ALINEA_ORFA = re.compile(r"\n[ \t]*(?:[*\-\u2022]|\d+[.)])[ \t]*$")
+
+
+def cortar_no_fim_da_frase(texto: str) -> str:
+    """Deita fora a frase que ficou a meio quando o modelo bate no limite.
+
+    O max_tokens corta onde calha, e o que chegou ao ecrã acabava em "faz uma
+    caminhada de 3". Uma lista com menos uma alínea lê-se na mesma; uma frase
+    cortada a meio de um número parece um erro de dados. Só apara: se o corte
+    levasse mais de um terço do texto, mais vale ficar como está.
+    """
+    if not texto or texto[-1] in ".!?:":
+        return texto
+    fins = [m.end() for m in FIM_DE_FRASE.finditer(texto)]
+    if not fins or fins[-1] < len(texto) * 0.66:
+        return texto
+    # O ponto de "2." também conta como fim de frase para o padrão, por isso o
+    # corte pode parar logo a seguir ao número e deixar a alínea sem texto.
+    return ALINEA_ORFA.sub("", texto[:fins[-1]].rstrip()).rstrip()
+
+
 def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
     """Gera, verifica os números, e insiste uma vez.
 
@@ -357,7 +379,7 @@ def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
             reforco = STRICTER
             continue
 
-        text = arranjar(text)
+        text = cortar_no_fim_da_frase(arranjar(text))
         if ln == "pt":
             text = aportuguesar(text)
         ok, motivo = portugues_europeu(text, ln)
@@ -623,7 +645,7 @@ for.
 
 {pedido.strip()}
 
-Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", max_tokens=700, ln=ln)
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", max_tokens=1100, ln=ln)
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:
@@ -759,6 +781,19 @@ def profile_language() -> str:
         return "en"
 
 
+def paralelismo() -> int:
+    """Quantas secções pedir ao mesmo tempo.
+
+    Só compensa onde há núcleos que o modelo ainda não está a usar. O llama.cpp
+    leva 4 threads, por isso abaixo de 8 fica em fila, que é o caso de qualquer
+    NAS de 2 núcleos. COACH_PARALLEL força o valor para quem queira medir.
+    """
+    forcado = os.environ.get("COACH_PARALLEL")
+    if forcado:
+        return max(1, int(forcado))
+    return 4 if (os.cpu_count() or 2) >= 8 else 1
+
+
 def main() -> None:
     cfg = yaml.safe_load(CATALOGUE.read_text())
     ln = profile_language()
@@ -773,10 +808,18 @@ def main() -> None:
                       skip_today=ja_treinou_hoje, objetivo=cfg.get("objetivo"),
                       extras=cfg, ln=ln)
 
-    # As quatro secções não dependem umas das outras, e o llama.cpp atende
-    # vários pedidos ao mesmo tempo. Em fila, um relatório com um modelo
-    # grande leva meia hora; em paralelo leva o tempo da secção mais lenta.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # As quatro secções não dependem umas das outras, e num PC com núcleos a
+    # sobrar o llama.cpp atende-as ao mesmo tempo. Numa NAS não: medido num
+    # DS923+ de 2 núcleos, uma secção sozinha gera a 1.15 tokens/s e quatro em
+    # paralelo geram a 0.35 cada, ou seja 1.17 somadas. O débito é o mesmo,
+    # apenas repartido.
+    #
+    # E repartido custa caro, porque o LLM_TIMEOUT é por chamada. Em paralelo
+    # as quatro ficam abertas durante o relatório inteiro, e a hora que devia
+    # ser o limite de cada secção passa a ser o limite do conjunto: estouram
+    # todas juntas em vez de nenhuma. Foi assim que um relatório saiu com a
+    # última secção cancelada aos 3528 segundos.
+    with ThreadPoolExecutor(max_workers=paralelismo()) as pool:
         tarefas = {
             "sessao": pool.submit(comentar_sessao, m, ln),
             "livre": pool.submit(seccao_livre, m, plan, flags, ln),

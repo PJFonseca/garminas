@@ -12,6 +12,7 @@ carrega significado sozinha; há sempre rótulo ao lado.
 
 from __future__ import annotations
 
+import re
 from html import escape
 
 from assess import ESTADOS, desporto
@@ -151,15 +152,22 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
 .painéis { display:grid; grid-template-columns:1fr; gap:1.75rem; align-items:start; }
 @media (min-width:64rem) { .painéis { grid-template-columns:1fr 1fr; gap:2.25rem; } }
 .painel > h2:first-child, .painel > h3:first-child { margin-top:0; }
+/* Dentro da grelha quem trata do espaço é o gap, não a margem do cartão. */
+.painel > .correu, .painel > .seguir { margin-bottom:0; }
 /* Medida de leitura. Acima de uns 75 caracteres por linha o olho perde a
    linha seguinte ao voltar à esquerda. Abaixo de 60 parte de mais. O rodapé e
    as legendas são texto pequeno e aguentam mais. */
 .prose, .callout, .resumo p { max-width:74ch; }
+/* A secção livre ocupa a linha toda e não tem nada ao lado, por isso a 74ch
+   sobrava meio ecrã num monitor largo. 96 é mais do que a medida ideal, e é
+   uma troca consciente: linha mais difícil de seguir, espaço aproveitado. */
+.prose.larga { max-width:96ch; }
 .legend { max-width:96ch; }
 .prose p, .correu p, .seguir .como { text-wrap:pretty; }
 .prose { border-left:3px solid var(--line); padding:.1rem 0 .1rem 1rem; margin:.75rem 0 1.5rem; }
 .prose p { margin:.4rem 0; }
-.prose ol { margin:.4rem 0; padding-left:1.2rem; }
+.prose ol, .prose ul { margin:.4rem 0; padding-left:1.2rem; }
+.prose li { margin:.25rem 0; text-wrap:pretty; }
 .legend { font-size:.8rem; color:var(--dim); margin:.2rem 0 1.5rem; }
 .num { font-variant-numeric:tabular-nums; text-align:right; }
 
@@ -400,11 +408,68 @@ def _modal(d: dict, ln: str) -> str:
             f'{"".join(partes)}</div></dialog>')
 
 
-def _prose(text: str | None, ln: str) -> str:
+_FORTE = re.compile(r"\*\*(.+?)\*\*", re.S)
+_ITEM = re.compile(r"^(?:[*\-\u2022]|(\d+)[.)])\s+")
+
+
+def _inline(texto: str) -> str:
+    """Escapa primeiro, converte depois, e por esta ordem de propósito.
+
+    Assim o único markup que chega ao ecrã é o que aqui se reconhece. O que o
+    modelo escrever com sinais de menor ou maior sai como texto, não como
+    etiqueta.
+    """
+    return _FORTE.sub(r"<strong>\1</strong>", escape(texto.strip()))
+
+
+def _prose(text: str | None, ln: str, larga: bool = False) -> str:
+    """O texto do modelo, em HTML.
+
+    As secções de forma fixa pedem duas frases e é isso que recebem. A secção
+    livre não: quem a escreveu pede o que quiser, e um pedido com alíneas vem
+    respondido em markdown. Escapado linha a linha, aparecia no ecrã com os
+    asteriscos à mostra. Reconhece-se o pouco que o modelo usa, negrito e as
+    duas espécies de lista, e o resto continua a ser parágrafo.
+    """
     if not text:
         return f'<p class=legend>{_t("ui.no_text", ln)}</p>'
-    blocos = [f"<p>{escape(b.strip())}</p>" for b in text.split("\n") if b.strip()]
-    return f'<div class=prose>{"".join(blocos)}</div>'
+
+    cls = "prose larga" if larga else "prose"
+    blocos: list[str] = []
+    itens: list[str] = []
+    tipo = ""
+    inicio = 1
+
+    def fechar() -> None:
+        nonlocal itens, tipo
+        if itens:
+            # O modelo escreve listas sem indentação, por isso os pontos com
+            # asterisco no meio de uma lista numerada não são uma sublista: são
+            # uma interrupção. Retomar em <ol> voltava a numerar em 1, e o "4."
+            # que ele escreveu aparecia como "1.". O start repõe a contagem.
+            abre = f'<ol start="{inicio}">' if tipo == "ol" and inicio != 1 else f"<{tipo}>"
+            blocos.append(f"{abre}{''.join(itens)}</{tipo}>")
+            itens, tipo = [], ""
+
+    for linha in text.split("\n"):
+        linha = linha.strip()
+        if not linha:
+            continue
+        marca = _ITEM.match(linha)
+        if marca:
+            # "3.3 km" não é uma alínea: o \s+ do padrão exige espaço a seguir
+            # ao ponto, e "**Ações:**" também não, pelo mesmo motivo.
+            novo = "ol" if marca.group(1) else "ul"
+            if novo != tipo:
+                fechar()
+                tipo = novo
+                inicio = int(marca.group(1)) if novo == "ol" else 1
+            itens.append(f"<li>{_inline(linha[marca.end():])}</li>")
+        else:
+            fechar()
+            blocos.append(f"<p>{_inline(linha)}</p>")
+    fechar()
+    return f'<div class="{cls}">{"".join(blocos)}</div>'
 
 
 def _seguir(dia: dict, hoje: str, ln: str) -> str:
@@ -458,7 +523,7 @@ def report_html(d: dict) -> str:
     # O comentário à sessão que acabou de ser feita. Estava a ser gerado e
     # guardado, e nunca chegava ao ecrã.
     custom = d.get("custom_section")
-    custom_html = (f'<h2>{_t("ui.section_title", ln)}</h2>{_prose(custom, ln)}'
+    custom_html = (f'<h2>{_t("ui.section_title", ln)}</h2>{_prose(custom, ln, larga=True)}'
                    if custom else "")
 
     correu_html = ""
@@ -508,6 +573,15 @@ def report_html(d: dict) -> str:
         f'<td class=num>{s["avg_hr"] or ""}</td><td class=num>{s["load"]}</td></tr>'
         for s in m["recent"])
 
+    # "Como correu" e "A seguir" respondem às duas perguntas do momento e são
+    # cartões da mesma ordem de grandeza, por isso enchem bem uma linha a dois.
+    # Empilhados deixavam meio ecrã em branco. Sem sessão para comentar, o que
+    # vem a seguir fica com a linha inteira, que é o que faz sentido sozinho.
+    seguir_html = _seguir(plan["days"][0], hoje, ln)
+    topo = (f'<div class=painéis><div class=painel>{correu_html}</div>'
+            f'<div class=painel>{seguir_html}</div></div>'
+            if correu_html else seguir_html)
+
     resumo = plan["summary"]
     n_duras = month["hard_sessions"]
     duras_txt = (_t("ui.one_hard", ln) if n_duras == 1
@@ -517,9 +591,8 @@ def report_html(d: dict) -> str:
   <span class="badge {cls}">{icone} {estado}</span></div>
 
 <div class=today>{agora}</div>
-{correu_html}
+{topo}
 {custom_html}
-{_seguir(plan["days"][0], hoje, ln)}
 {flags}
 
 {estado_html}

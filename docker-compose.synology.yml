@@ -81,8 +81,15 @@ services:
         --n-predict 512
     volumes:
       - ./models:/models:ro,z
-    # A 4B model needs about 4 GB. Raise to 12g for the 12B, if the NAS has it.
-    mem_limit: 6g
+    # The model the setup page recommends, Gemma 3 12B, is 6.8 GiB of weights
+    # and wants headroom for the KV cache on top. Under a 6g ceiling it does
+    # not fit: the weights are evicted and re-read from disk on every token.
+    # Measured on a DS923+ that way, one section took 59 minutes at 0.14
+    # tokens a second, and the container was then killed with exit 137.
+    #
+    # This is a ceiling, not a reservation. A 4B model under it uses its 2.5
+    # GiB and no more, so the number costs nothing to anyone who picks one.
+    mem_limit: 12g
     networks: [default]
 
 networks:
