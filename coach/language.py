@@ -266,6 +266,8 @@ F.update({
     "ui.recommendation": ("Recomendação", "Recommendation"),
     "ui.when_to_ease": ("Quando abrandar", "When to ease off"),
     "ui.recent": ("Treinos recentes", "Recent sessions"),
+    'ui.check_numbers': ('Verificar os números do texto', 'Check the numbers in the text'),
+    'ui.check_numbers_help': ('Corta as frases com números que não estejam nos dados. Desligado, o modelo escreve o que quiser, incluindo números que inventou. O plano e as contas não dependem disto.', 'Cuts sentences with numbers that are not in the data. Switched off, the model writes whatever it likes, including numbers it made up. The plan and the arithmetic do not depend on this.'),
     'ui.evolution': ('Estás a melhorar?', 'Are you improving?'),
     'ui.ef_index': ('Ritmo à mesma frequência cardíaca', 'Pace at the same heart rate'),
     'ui.wellbeing': ('Bem-estar', 'Wellbeing'),

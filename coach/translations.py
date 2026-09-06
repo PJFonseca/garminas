@@ -11,6 +11,9 @@ a check for that in the test suite.
 """
 
 ES = {
+    'ui.check_numbers': 'Comprobar los números del texto',
+    'ui.check_numbers_help': 'Elimina las frases con números que no están en los datos. Desactivado, el modelo escribe lo que quiera, incluidos números inventados. El plan y los cálculos no dependen de esto.',
+
     'ui.evolution': '¿Estás mejorando?',
     'ui.ef_index': 'Ritmo a la misma frecuencia cardiaca',
     'ui.wellbeing': 'Bienestar',
@@ -151,6 +154,9 @@ ES = {
 }
 
 FR = {
+    'ui.check_numbers': 'Vérifier les chiffres du texte',
+    'ui.check_numbers_help': "Supprime les phrases dont les chiffres ne figurent pas dans les données. Désactivé, le modèle écrit ce qu'il veut, y compris des chiffres inventés. Le plan et les calculs n'en dépendent pas.",
+
     'ui.evolution': 'Tu progresses ?',
     'ui.ef_index': 'Allure à la même fréquence cardiaque',
     'ui.wellbeing': 'Bien-être',
@@ -291,6 +297,9 @@ FR = {
       'ui.no_reports_sub': "La première synchronisation de {nome} n'a pas encore tourné."}
 
 DE = {
+    'ui.check_numbers': 'Die Zahlen im Text prüfen',
+    'ui.check_numbers_help': 'Entfernt Sätze mit Zahlen, die nicht in den Daten stehen. Ausgeschaltet schreibt das Modell, was es will, auch erfundene Zahlen. Plan und Rechnung hängen nicht davon ab.',
+
     'ui.evolution': 'Wirst du besser?',
     'ui.ef_index': 'Tempo bei gleicher Herzfrequenz',
     'ui.wellbeing': 'Wohlbefinden',
@@ -458,6 +467,9 @@ DE = {
       'ui.no_reports_sub': 'Die erste Synchronisierung von {nome} ist noch nicht gelaufen.'}
 
 IT = {
+    'ui.check_numbers': 'Controllare i numeri del testo',
+    'ui.check_numbers_help': 'Elimina le frasi con numeri che non sono nei dati. Disattivato, il modello scrive quello che vuole, numeri inventati compresi. Il piano e i calcoli non dipendono da questo.',
+
     'ui.evolution': 'Stai migliorando?',
     'ui.ef_index': 'Ritmo alla stessa frequenza cardiaca',
     'ui.wellbeing': 'Benessere',
@@ -614,6 +626,9 @@ IT = {
       'ui.no_reports_sub': 'La prima sincronizzazione di {nome} non è ancora partita.'}
 
 ZH = {
+    'ui.check_numbers': '核对文本中的数字',
+    'ui.check_numbers_help': '删除含有数据中没有的数字的句子。关闭后，模型可以随意书写，包括它编造的数字。计划和计算不受影响。',
+
     'ui.evolution': '你在进步吗？',
     'ui.ef_index': '相同心率下的配速',
     'ui.wellbeing': '健康状况',

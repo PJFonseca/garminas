@@ -157,9 +157,12 @@ def preferencias() -> dict:
         d = profiles.read(DATA_DIR) or {}
         return {"style": d.get("style") or "",
                 "notes": d.get("notes") or d.get("prompt") or "",
-                "section": d.get("section") or ""}
+                "section": d.get("section") or "",
+                # Ligado quando o perfil não diz nada: um relatório de saúde
+                # não estreia com a verificação desligada.
+                "check_numbers": d.get("check_numbers", True) is not False}
     except Exception:                            # noqa: BLE001
-        return {"style": "", "notes": "", "section": ""}
+        return {"style": "", "notes": "", "section": "", "check_numbers": True}
 
 
 def contexto_pessoal() -> str:
@@ -237,14 +240,12 @@ NAO_GERUNDIO = {"quando", "fundo", "mundo", "segundo", "profundo", "comando",
                 "bando", "brando", "redondo", "tremendo", "estupendo"}
 GERUNDIO = re.compile(r"\b\w{3,}(?:ando|endo|indo)\b", re.I)
 
-AVISO_LINGUA = ("\n\nA tua resposta anterior não serve: tinha gerúndios encadeados, "
-                "construções do português do Brasil, ou fórmulas de relatório. Reescreve "
-                "com orações ligadas por \"que\", \"para\" ou \"porque\", e fala "
-                "diretamente com a pessoa em frases curtas.")
-
-STRICTER = ("\n\nA tua resposta anterior continha números que não constam dos dados "
-            "acima. Reescreve usando exclusivamente os números listados, tal como "
-            "aparecem. Não calcules médias, somas, contagens nem diferenças.")
+# Só há uma geração, por isso a exigência vai toda no primeiro pedido. Antes
+# era um segundo prompt a dizer "a tua resposta anterior tinha números a mais",
+# que custava outra geração inteira para dizer o que cabe aqui de graça.
+SO_ESTES_NUMEROS = ("\n\nUse only the numbers listed above, exactly as they appear. "
+                    "Do not average, add, count or subtract them, and do not bring in "
+                    "numbers from anywhere else, general guidelines included.")
 
 
 def arranjar(texto: str) -> str:
@@ -354,45 +355,88 @@ def cortar_no_fim_da_frase(texto: str) -> str:
     return ALINEA_ORFA.sub("", texto[:fins[-1]].rstrip()).rstrip()
 
 
-def write(prompt: str, max_tokens: int = 400, ln: str = "en") -> str | None:
-    """Gera, verifica os números, e insiste uma vez.
+def _frases(linha: str) -> list[str]:
+    """Parte uma linha em frases, com a pontuação agarrada a cada uma."""
+    partes, inicio = [], 0
+    for m in FIM_DE_FRASE.finditer(linha):
+        partes.append(linha[inicio:m.end()])
+        inicio = m.end()
+    if linha[inicio:].strip():
+        partes.append(linha[inicio:])
+    return partes
 
-    Um 4B conta mal: ao ver dez sessões pede-se-lhe uma leitura e ele responde
-    que houve seis de 75 minutos quando houve três. Por isso tudo o que é
-    contagem vai já calculado no prompt, e o que sair com números que lá não
-    estavam é rejeitado. Num relatório de saúde, texto errado com ar de certeza
-    é pior do que secção nenhuma.
+
+def podar_inventado(texto: str, permitidos: set[str]) -> str:
+    """Deita fora só as frases que trazem números fora dos dados.
+
+    Perder a secção inteira por causa de uma frase é caro: são minutos de um
+    modelo lento para ficar com menos do que já havia. O compromisso não é
+    deixar passar o número inventado, esse continua a sair; é ficar com o
+    resto, que estava certo.
+
+    O número da alínea não conta como número do texto, senão um "1." abria
+    caminho para deitar fora a alínea inteira.
     """
-    allowed = _numbers(prompt)
-    reforco = ""
-    melhor = None
-    for attempt in (1, 2, 3):
-        text = ask_llm(sistema(ln), prompt + reforco, max_tokens,
-                       temperature=0.2 + 0.2 * (attempt - 1))
-        if text is None:
-            return None
-
-        invented = _numbers(LIST_MARKER.sub("", text)) - allowed
-        if invented:
-            print(f"tentativa {attempt}: números fora dos dados {sorted(invented)}",
-                  file=sys.stderr)
-            reforco = STRICTER
+    limpas = []
+    for linha in texto.split("\n"):
+        marca = LIST_MARKER.match(linha)
+        corpo = linha[marca.end():] if marca else linha
+        if not corpo.strip():
             continue
+        boas = [f for f in _frases(corpo) if not (_numbers(f) - permitidos)]
+        junto = "".join(boas).strip()
+        if junto:
+            limpas.append((marca.group(0) if marca else "") + junto)
+    return "\n".join(limpas).strip()
 
-        text = cortar_no_fim_da_frase(arranjar(text))
-        if ln == "pt":
-            text = aportuguesar(text)
-        ok, motivo = portugues_europeu(text, ln)
-        if ok:
-            return text
-        print(f"tentativa {attempt}: não é português europeu ({motivo})", file=sys.stderr)
-        melhor = melhor or text        # guardar o primeiro sem números inventados
-        reforco = AVISO_LINGUA
 
-    # Os números estão certos e a língua não está perfeita: vale mais o texto
-    # aportuguesado do que secção nenhuma. O contrário, números errados, é
-    # que não se aceita.
-    return melhor
+def write(prompt: str, max_tokens: int = 400, ln: str = "en",
+          nome: str = "secção") -> str | None:
+    """Gera uma vez, verifica os números, e fica com o que os dados sustentam.
+
+    Gerava até três vezes: ao ver um número fora dos dados mandava reescrever
+    tudo, e ao fim de três podia acabar sem secção nenhuma. Numa NAS de dois
+    núcleos uma secção são vinte minutos, portanto uma rejeição custava quarenta
+    minutos a mais para às vezes ficar com nada. Agora gera uma vez e corta a
+    frase que traz o número inventado, que é a parte errada, em vez do texto
+    inteiro, que não estava.
+
+    A verificação pode ser desligada no perfil, e aí sai o que o modelo
+    escrever. É por causa do que sai nesse caso que ela existe: dado o número
+    0.65 e a regra de que abaixo de 0.8 se perde forma, um 4B escreveu que
+    estava "dentro do intervalo seguro".
+    """
+    verificar = preferencias()["check_numbers"]
+    text = ask_llm(sistema(ln), prompt + (SO_ESTES_NUMEROS if verificar else ""), max_tokens)
+    if text is None:
+        return None
+
+    if verificar:
+        allowed = _numbers(prompt)
+        inventados = _numbers(LIST_MARKER.sub("", text)) - allowed
+        if inventados:
+            # A frase é que diz se o modelo calculou, arredondou, ou foi buscar
+            # uma regra geral. Só a lista de números não explica nada.
+            culpadas = [f.strip() for linha in text.split("\n")
+                        for f in _frases(LIST_MARKER.sub("", linha))
+                        if _numbers(f) & inventados]
+            print(f"{nome}: números fora dos dados {sorted(inventados)}, "
+                  f"a cortar: {' | '.join(culpadas)[:300]}", file=sys.stderr)
+            text = podar_inventado(text, allowed)
+            if not text:
+                return None
+
+    text = cortar_no_fim_da_frase(arranjar(text))
+    if ln == "pt":
+        text = aportuguesar(text)
+
+    # A língua já não faz repetir nada: o arranjar e o aportuguesar corrigem o
+    # que é mecânico, e o resto sai como está. Um texto com um gerúndio lê-se;
+    # esperar mais vinte minutos por outro não se justifica.
+    ok, motivo = portugues_europeu(text, ln)
+    if not ok:
+        print(f"{nome}: {motivo}, sai como está", file=sys.stderr)
+    return text or None
 
 
 def ramp_verdict(ramp, ln: str = "en") -> str:
@@ -473,7 +517,7 @@ At most 60 words. Use at most two numbers, copied from the list. Careful: a
 metric's current value is not its target. If you tell someone how much to
 sleep, use the number under "where it should be", never what they sleep now.
 
-Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", ln=ln)
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", ln=ln, nome="análise")
 
 
 def comentar_sessao(m: dict, ln: str = "en") -> str | None:
@@ -505,7 +549,7 @@ next few days.
 At most 45 words. Do not invent numbers or comparisons outside the list.
 
 Write your answer in {LINGUAS_NOME.get(ln, "English")}.""",
-                 max_tokens=220, ln=ln)
+                 max_tokens=220, ln=ln, nome="comentário à sessão")
 
 
 def review_and_recommend(m: dict, plan: dict, flags: list[str], ln: str = "en") -> str | None:
@@ -547,7 +591,7 @@ At most 90 words. Do not judge fitness or progression: that is said elsewhere
 in the report. Do not mention days or sessions outside the lists.
 
 Write your answer in {LINGUAS_NOME.get(ln, "English")}.""",
-                 max_tokens=420, ln=ln)
+                 max_tokens=420, ln=ln, nome="recomendação")
 
 
 def seccao_livre(m: dict, plan: dict, flags: list[str], ln: str) -> str | None:
@@ -645,7 +689,8 @@ for.
 
 {pedido.strip()}
 
-Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", max_tokens=1100, ln=ln)
+Write your answer in {LINGUAS_NOME.get(ln, "English")}.""", max_tokens=1100,
+                 ln=ln, nome="secção livre")
 
 
 def table(header: list[str], rows: list[list]) -> list[str]:

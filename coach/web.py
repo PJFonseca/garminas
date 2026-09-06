@@ -782,6 +782,12 @@ def settings(slug: str):
   <h2>{_t("ui.language_choice", ln)}</h2>
   <select name=language>{opcoes}</select>
 
+  <h2>{_t("ui.check_numbers", ln)}</h2>
+  <p class=note-box>{_t("ui.check_numbers_help", ln)}</p>
+  <label class=model><input type=checkbox name=check_numbers value=1
+    {"checked" if data.get("check_numbers", True) is not False else ""}>
+    <span>{_t("ui.check_numbers", ln)}</span></label>
+
   <button type=submit>{_t("ui.save", ln)}</button>
 </form>
 
@@ -804,6 +810,9 @@ def save_settings(slug: str):
     data["notes"] = request.form.get("notes", "").strip()[:4000]
     data["section"] = request.form.get("section", "").strip()[:6000]
     data.pop("prompt", None)                 # campo único das versões anteriores
+    # Uma checkbox não vem no formulário quando está desligada, por isso a
+    # ausência é o "não" e não um "não mexeram nisto".
+    data["check_numbers"] = bool(request.form.get("check_numbers"))
     escolha = request.form.get("language", "").strip()
     data["language_choice"] = escolha
     if escolha:
