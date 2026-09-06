@@ -18,6 +18,9 @@ services:
     environment:
       TZ: ${TZ:-Europe/Lisbon}
       GARMIN_DATA_DIR: /data
+      # Qual o ficheiro que o serviço do modelo abre. A página de troca precisa
+      # de saber, senão oferece-se para apagar o que está a ser usado.
+      MODEL_FILE: ${MODEL_FILE:-model.gguf}
       LLM_URL: http://llm:8080/v1/chat/completions
       LLM_TIMEOUT: ${LLM_TIMEOUT:-3600}
       PUID: ${PUID:-}
@@ -52,6 +55,9 @@ services:
     environment:
       TZ: ${TZ:-Europe/Lisbon}
       GARMIN_DATA_DIR: /data
+      # Qual o ficheiro que o serviço do modelo abre. A página de troca precisa
+      # de saber, senão oferece-se para apagar o que está a ser usado.
+      MODEL_FILE: ${MODEL_FILE:-model.gguf}
       LLM_URL: http://llm:8080/v1/chat/completions
       WEB_HOST: ${WEB_HOST:-0.0.0.0}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-3600}
@@ -86,12 +92,21 @@ services:
         while [ ! -f /models/${MODEL_FILE:-model.gguf} ]; do
           echo "à espera de /models/${MODEL_FILE:-model.gguf}"; sleep 10;
         done;
-        exec /app/llama-server
+        V=$$(stat -c %s-%Y /models/${MODEL_FILE:-model.gguf});
+        /app/llama-server
         -m /models/${MODEL_FILE:-model.gguf}
         --host 0.0.0.0 --port 8080
         --ctx-size ${LLM_CTX:-8192}
         --threads ${LLM_THREADS:-4}
-        --n-predict 384
+        --n-predict 384 &
+        P=$$!;
+        while kill -0 $$P 2>/dev/null; do
+          sleep 15;
+          [ "$$(stat -c %s-%Y /models/${MODEL_FILE:-model.gguf} 2>/dev/null)" = "$$V" ] ||
+            { echo "o ficheiro do modelo mudou, a sair para o docker reiniciar"; kill $$P; break; };
+        done;
+        wait $$P 2>/dev/null;
+        exit 0
     volumes:
       - ./models:/models:ro,z
     # Um 4B em Q4 precisa de cerca de 4 GB; um 12B de perto de 10. Se o

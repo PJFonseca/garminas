@@ -66,19 +66,36 @@ services:
     container_name: garminas-llm
     restart: unless-stopped
     # Waits for the model file rather than dying and restarting while the
-    # setup page downloads it.
+    # setup page downloads it, and then keeps watching it.
+    #
+    # llama-server memory maps the weights, so swapping the file changes
+    # nothing for the process already running: it holds the old inode and
+    # would serve the old model forever. Nothing here can restart it either,
+    # since the web container has no docker socket and should not have one.
+    # So the server watches its own file and exits when it changes, and the
+    # restart policy above brings it back with the new one. That is what makes
+    # the "change model" page work without anyone opening Container Manager.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
         while [ ! -f /models/model.gguf ]; do
           echo "waiting for /models/model.gguf"; sleep 10;
         done;
-        exec /app/llama-server
+        V=$$(stat -c %s-%Y /models/model.gguf);
+        /app/llama-server
         -m /models/model.gguf
         --host 0.0.0.0 --port 8080
         --ctx-size 8192
         --threads 4
-        --n-predict 512
+        --n-predict 512 &
+        P=$$!;
+        while kill -0 $$P 2>/dev/null; do
+          sleep 15;
+          [ "$$(stat -c %s-%Y /models/model.gguf 2>/dev/null)" = "$$V" ] ||
+            { echo "model.gguf changed, exiting so docker restarts with it"; kill $$P; break; };
+        done;
+        wait $$P 2>/dev/null;
+        exit 0
     volumes:
       - ./models:/models:ro,z
     # The model the setup page recommends, Gemma 3 12B, is 6.8 GiB of weights

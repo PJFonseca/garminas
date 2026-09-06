@@ -17,6 +17,7 @@ import os
 import pty
 import re
 import select
+import shutil
 import subprocess
 import sys
 import hashlib
@@ -403,6 +404,60 @@ def refresh_work(folder: Path) -> None:
         with job.lock:
             job.error, job.phase = str(exc), "erro"
         job.say(f"ERROR: {exc}")
+    finally:
+        with job.lock:
+            job.running = False
+
+
+def trocar_modelo_work(model_id: str) -> None:
+    """Descarrega outro modelo e põe-no no lugar do que lá está.
+
+    O download escreve para um .part e só troca o ficheiro no fim, por isso o
+    modelo atual continua a responder durante toda a transferência. A troca
+    apaga o antigo por si: é o mesmo nome.
+
+    Quem reinicia o llama-server é ele próprio. Tem os pesos em memória
+    mapeada, portanto trocar o ficheiro por baixo não muda nada para o
+    processo a correr, e daqui não há como lhe tocar: este container não tem
+    socket do docker, e não deve ter. O serviço vigia o seu ficheiro, sai
+    quando ele muda, e a política de reinício traz-no de volta com o novo.
+    """
+    try:
+        with job.lock:
+            job.running, job.phase, job.progress = True, "modelo", None
+        escolhido = next((m for m in CATALOGUE if m["id"] == model_id), None)
+        if not escolhido:
+            raise RuntimeError("modelo desconhecido")
+
+        # Durante o download convivem os dois ficheiros, por isso o espaço
+        # preciso é o do novo, não a diferença. Ficar sem disco a meio de 7 GB
+        # deixa a NAS cheia e o relatório sem modelo.
+        livre = shutil.disk_usage(TARGET.parent).free / 1048576
+        if livre < escolhido["mib"] * 1.05:
+            raise RuntimeError(
+                f"não cabe: {escolhido['name']} precisa de {human(escolhido['mib'])} "
+                f"e há {human(livre)} livres em disco")
+
+        job.say(f"A descarregar {escolhido['name']} ({human(escolhido['mib'])}).")
+        job.say("O modelo atual continua a responder até o novo estar completo.")
+
+        def progresso(feitos: int, total: int) -> None:
+            with job.lock:
+                job.progress = int(feitos * 100 / total) if total else None
+
+        if not download_model(escolhido, on_progress=progresso):
+            raise RuntimeError("o download falhou. Voltar a tentar retoma onde ficou")
+
+        META.write_text(f'{{"id": "{escolhido["id"]}", "name": "{escolhido["name"]}", '
+                        f'"url": "{escolhido["url"]}", "installed": "{date.today()}"}}')
+        job.say(f"{escolhido['name']} instalado, e o anterior apagado.")
+        job.say("O serviço do modelo dá por isso e reinicia sozinho dentro de um minuto.")
+        with job.lock:
+            job.phase, job.progress, job.done = "pronto", 100, True
+    except Exception as exc:                     # noqa: BLE001
+        with job.lock:
+            job.error, job.phase = str(exc), "erro"
+        job.say(f"ERRO: {exc}")
     finally:
         with job.lock:
             job.running = False
@@ -825,11 +880,140 @@ def report_for(person: dict, day: str | None):
               f'<button class="pequeno vazio" type=submit>{_t("ui.rewrite", ln)}</button></form>')
     return page(f'{person["first"]}, {APP}',
                 f'<nav>{portrait}<b>{escape(person["name"])}</b>'
-                f'{update}{settings_link}<a href="/">{_t("ui.switch", ln)}</a>'
+                f'{update}{settings_link}<a href="/modelo">Modelo</a>'
+                f'<a href="/">{_t("ui.switch", ln)}</a>'
                 f'<a href="/new">{_t("ui.add", ln)}</a>{sair}</nav>{body}'
                 f'<hr><h3>{_t("ui.previous", ln)}</h3>'
                 f'<div class=previous>{previous or f"<span class=legend>{_t(chr(117)+chr(105)+chr(46)+chr(110)+chr(101)+chr(110)+chr(104)+chr(117)+chr(109), ln)}</span>"}</div>',
                 MODAL_JS, wide=True)
+
+
+def ficheiro_em_uso() -> str:
+    """O .gguf que o serviço do modelo tem aberto.
+
+    Quase sempre model.gguf, que é o que a página de configuração escreve. Mas
+    o compose local deixa apontar MODEL_FILE a outro, e sem saber isso a lista
+    de ficheiros a mais ofereceria para apagar o que está a servir.
+    """
+    return (os.environ.get("MODEL_FILE") or "").strip() or TARGET.name
+
+
+def modelos_em_disco() -> list[dict]:
+    """Os .gguf que estão lá, com o que está em uso marcado."""
+    try:
+        fich = sorted(TARGET.parent.glob("*.gguf"))
+    except OSError:
+        return []
+    saida = []
+    for p in fich:
+        try:
+            saida.append({"nome": p.name, "mib": p.stat().st_size / 1048576,
+                          "ativo": p.name == ficheiro_em_uso()})
+        except OSError:
+            continue
+    return saida
+
+
+def modelo_instalado() -> dict:
+    """O que o model.json diz, se disser alguma coisa."""
+    try:
+        return json.loads(META.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+@app.get("/modelo")
+def modelo_page():
+    ln = request_language()
+    atual = modelo_instalado()
+    em_disco = modelos_em_disco()
+    livre = shutil.disk_usage(TARGET.parent).free / 1048576
+    em_uso = ficheiro_em_uso()
+
+    opcoes = []
+    for m in CATALOGUE:
+        e_o_atual = m["id"] == atual.get("id")
+        cabe = livre >= m["mib"] * 1.05 or e_o_atual
+        marca = " <b>· em uso</b>" if e_o_atual else ""
+        aviso = "" if cabe else " <b>· não cabe no disco</b>"
+        opcoes.append(
+            f'<label class=model><input type=radio name=model value="{m["id"]}"'
+            f'{" disabled" if (e_o_atual or not cabe) else ""}>'
+            f'<span><b>{escape(m["name"])}</b> <span class=size>{human(m["mib"])}</span>'
+            f'{marca}{aviso}<span class=note>{escape(m["note"])}</span></span></label>')
+
+    sobras = []
+    for f in em_disco:
+        if f["ativo"]:
+            continue
+        sobras.append(
+            f'<form method=post action=/modelo/apagar class=inline>'
+            f'<input type=hidden name=nome value="{escape(f["nome"])}">'
+            f'{escape(f["nome"])} <span class=size>{human(f["mib"])}</span> '
+            f'<button class="pequeno vazio" type=submit>Apagar</button></form>')
+
+    nome_atual = escape(atual.get("name") or "desconhecido")
+    # O tamanho tem de ser o do ficheiro que o model.json descreve, não o do
+    # que está em uso: quando MODEL_FILE aponta para outro sítio são dois
+    # ficheiros diferentes, e juntar o nome de um ao tamanho do outro é dizer
+    # uma coisa que não existe.
+    tamanho = next((human(f["mib"]) for f in em_disco if f["nome"] == TARGET.name),
+                   "sem ficheiro")
+    return page(f"Modelo, {APP}", f"""
+<nav><a href="/">Voltar</a></nav>
+<h1>Modelo de linguagem</h1>
+<p class=sub>Escreve os comentários do relatório. Os números e o plano são
+calculados e não dependem dele.</p>
+
+<h2>O que está instalado</h2>
+<p class=note-box><b>{nome_atual}</b>, {tamanho}. Instalado a
+{escape(atual.get("installed") or "data desconhecida")}. Livres no disco: {human(livre)}.
+{f"<br>Atenção: o serviço está a abrir <b>{escape(em_uso)}</b>, não o {TARGET.name}. "
+ f"Trocar aqui escreve o {TARGET.name} e não muda o que está a correr enquanto "
+ f"MODEL_FILE apontar para outro sítio." if em_uso != TARGET.name else ""}</p>
+
+<h2>Trocar</h2>
+<p class=note-box>O modelo atual continua a responder durante o download, e só
+é substituído no fim. O antigo é apagado na troca, porque é o mesmo ficheiro.
+O serviço do modelo dá pela mudança e reinicia sozinho dentro de um minuto,
+sem ninguém abrir o Container Manager.</p>
+<form method=post action=/modelo>
+  {"".join(opcoes)}
+  <button type=submit>Descarregar e trocar</button>
+</form>
+
+{"<h2>Ficheiros a mais</h2><p class=note-box>Não estão em uso e só ocupam disco.</p>"
+ + "<br>".join(sobras) if sobras else ""}
+""")
+
+
+@app.post("/modelo")
+def modelo_trocar():
+    if job.snapshot()["running"]:
+        return redirect("/progress")
+    escolha = request.form.get("model", "").strip()
+    if not escolha:
+        return redirect("/modelo")
+    job.reset()
+    threading.Thread(target=trocar_modelo_work, args=(escolha,), daemon=True).start()
+    return redirect("/progress")
+
+
+@app.post("/modelo/apagar")
+def modelo_apagar():
+    """Apaga um .gguf que não está em uso.
+
+    O nome vem de um formulário, por isso não se confia nele: tem de ser um
+    ficheiro .gguf, dentro da pasta dos modelos, e nunca o que está a servir.
+    A guarda é o ficheiro em uso e não um nome fixo, senão a lista mostrava um
+    botão que não fazia nada quando MODEL_FILE aponta para outro sítio.
+    """
+    pasta = TARGET.parent.resolve()
+    alvo = (pasta / request.form.get("nome", "")).resolve()
+    if (alvo.parent == pasta and alvo.suffix == ".gguf"
+            and alvo.name != ficheiro_em_uso() and alvo.is_file()):
+        alvo.unlink()
+    return redirect("/modelo")
 
 
 @app.get("/new")
