@@ -189,7 +189,16 @@ h2 .conta { font-size:.8rem; font-weight:400; color:var(--dim); margin-left:.5re
   vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round; }
 .serie .sombra { fill:var(--s1); opacity:.09; }
 .serie .pt { fill:var(--s1); }
-.serie .alvo { fill:transparent; }
+/* fill:transparent não é "pintado" para o pointer-events por omissão, e o
+   Firefox cumpre isso: sem esta linha o alvo de 12px não recebia nada e
+   sobrava acertar no ponto de 3px. */
+.serie .alvo { fill:transparent; pointer-events:all; }
+.serie .guia { position:absolute; top:0; bottom:0; width:1px; background:var(--dim);
+  opacity:0; pointer-events:none; transition:opacity .1s; }
+.serie .dica-serie { position:absolute; white-space:nowrap; background:var(--fg); color:var(--bg);
+  font-size:.75rem; padding:.25rem .5rem; border-radius:5px; opacity:0; pointer-events:none;
+  transition:opacity .1s; z-index:3; transform:translate(-50%,-165%); }
+.serie.ativo .guia, .serie.ativo .dica-serie { opacity:1; }
 .serie .ref { stroke:var(--dim); stroke-width:1; stroke-dasharray:4 4; opacity:.55;
   vector-effect:non-scaling-stroke; }
 .serie .faixa { fill:var(--s1); opacity:.07; }
@@ -502,8 +511,12 @@ def _serie_svg(pontos: list[tuple], alto: int = 90, sombra: bool = True,
     partes.append(f'<path class=traco d="{caminho}"/>')
     for i, (x, y) in enumerate(pontos):
         quando = (datas[i] if datas and i < len(datas) else "")
+        rot = f'{quando}{" · " if quando else ""}{fmt(y)}'
+        # As coordenadas viajam no grupo porque a etiqueta é HTML por cima do
+        # SVG: em percentagem do viewBox acompanha o desenho a qualquer largura.
         partes.append(
-            f'<g><title>{escape(quando)}{" · " if quando else ""}{escape(fmt(y))}</title>'
+            f'<g data-t="{escape(rot)}" data-x="{px(x):.1f}" data-y="{py(y):.1f}">'
+            f'<title>{escape(rot)}</title>'
             f'<circle class=alvo cx="{px(x):.1f}" cy="{py(y):.1f}" r="12"/>'
             f'<circle class=pt cx="{px(x):.1f}" cy="{py(y):.1f}" r="3"/></g>')
     svg = (f'<svg viewBox="0 0 {L} {alto}" preserveAspectRatio=none role=img '
@@ -524,10 +537,12 @@ def _bloco_serie(titulo: str, serie: list[dict], agora: str, alto: int = 90,
     marcas = "".join(
         f'<span class="rotulo-ref dir" style="top:{alturas[v]:.1f}%">{escape(rot)}</span>'
         for rot, v in (refs or []) if v in alturas)
+    L_VB = 600
     primeira, ultima = serie[0]["date"], serie[-1]["date"]
     return (f'<div><div class=serie-topo><h4>{titulo}</h4>'
             f'<span class=agora>{escape(agora)}</span></div>'
-            f'<div class=serie>{svg}{marcas}</div>'
+            f'<div class=serie data-vb="{L_VB} {alto}">{svg}'
+            f'<i class=guia></i><span class=dica-serie></span>{marcas}</div>'
             f'<div class=axis><span style="text-align:left">{primeira}</span>'
             f'<span style="text-align:right">{ultima}</span></div></div>')
 

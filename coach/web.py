@@ -579,6 +579,43 @@ const ligar = (sel, campo, prefixo) =>
   });
 ligar('.day[data-dia]', 'dia', 'dia-');
 ligar('tr[data-sessao]', 'sessao', 'sessao-');
+
+// Etiqueta dos gráficos. Segue o ponto mais próximo em X em vez de exigir
+// pontaria: num gráfico de linha o que interessa é o instante, e um alvo de
+// 3 pixels não é interação nenhuma.
+document.querySelectorAll('.serie[data-vb]').forEach(s => {
+  const [larg, alto] = s.dataset.vb.split(' ').map(Number);
+  const pts = [...s.querySelectorAll('g[data-t]')].map(g => ({
+    x: +g.dataset.x, y: +g.dataset.y, t: g.dataset.t, c: g.querySelector('.pt')
+  }));
+  const dica = s.querySelector('.dica-serie'), guia = s.querySelector('.guia');
+  if (!pts.length || !dica || !guia) return;
+  let antes = null;
+  s.addEventListener('pointermove', e => {
+    const r = s.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width * larg;
+    let melhor = pts[0];
+    for (const p of pts) if (Math.abs(p.x - fx) < Math.abs(melhor.x - fx)) melhor = p;
+    if (antes && antes !== melhor) antes.c.setAttribute('r', 3);
+    melhor.c.setAttribute('r', 5);
+    antes = melhor;
+    const pct = melhor.x / larg * 100;
+    dica.textContent = melhor.t;
+    guia.style.left = pct + '%';
+    dica.style.left = pct + '%';
+    dica.style.top = (melhor.y / alto * 100) + '%';
+    // Junto às pontas a etiqueta sairia do painel, por isso encosta em vez
+    // de ficar centrada no ponto.
+    dica.style.transform = pct < 12 ? 'translate(0,-165%)'
+                         : pct > 88 ? 'translate(-100%,-165%)'
+                         : 'translate(-50%,-165%)';
+    s.classList.add('ativo');
+  });
+  s.addEventListener('pointerleave', () => {
+    s.classList.remove('ativo');
+    if (antes) { antes.c.setAttribute('r', 3); antes = null; }
+  });
+});
 document.querySelectorAll('dialog').forEach(d => {
   d.querySelector('.fechar')?.addEventListener('click', () => d.close());
   d.addEventListener('click', e => { if (e.target === d) d.close(); });
